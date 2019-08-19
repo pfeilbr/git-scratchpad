@@ -1,0 +1,20 @@
+{
+  "name": "git-scratchpad",
+  "version": "1.0.0",
+  "description": "an areas to try the various features of git[hub] in",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Success: tests passed\" && exit 0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pfeilbr/git-scratchpad.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/pfeilbr/git-scratchpad/issues"
+  },
+  "homepage": "https://github.com/pfeilbr/git-scratchpad#readme"
+}

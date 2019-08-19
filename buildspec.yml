@@ -1,0 +1,39 @@
+version: 0.2
+
+env:
+  variables:
+    TEST_CMD: "npm test"
+
+phases:
+  install:
+    commands:
+      - echo Entered the install phase...
+      - npm install
+    finally:
+      - echo This always runs even if the update or install command fails
+  pre_build:
+    commands:
+      - echo Entered the pre_build phase...
+      - ls $CODEBUILD_SRC_DIR
+      - env
+    finally:
+      - echo This always runs even if the login command fails
+  build:
+    commands:
+      - echo Entered the build phase...
+      - echo Build started on `date`
+      - eval $TEST_CMD
+    finally:
+      - echo This always runs even if the install command fails
+  post_build:
+    commands:
+      - echo Entered the post_build phase...
+      - echo Build completed on `date`
+artifacts:
+  files:
+    - buildspec.yml
+    - README.md
+  discard-paths: yes
+cache:
+  paths:
+    - "/node_modules/**/*"
