@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 
 from gsuite.api import Client
+from gsuite.cmdreg import Cmd, arg, register_service
 from gsuite.errors import CLIError
 from gsuite.output import emit
 
@@ -75,23 +76,16 @@ def cmd_list(args) -> int:
 
 
 def register(subparsers) -> None:
-    p = subparsers.add_parser("api", help="raw calls to any Google API")
-    sub = p.add_subparsers(dest="subcommand", metavar="<command>")
-
-    call = sub.add_parser("call", help="authorized request to any endpoint")
-    call.add_argument("method", help="GET/POST/PATCH/PUT/DELETE")
-    call.add_argument("path",
-                      help="full URL or path under www.googleapis.com "
-                           "(e.g. drive/v3/about)")
-    call.add_argument("--param", action="append", metavar="KEY=VALUE")
-    call.add_argument("--body", help="JSON request body")
-    call.set_defaults(func=cmd_call)
-
-    describe = sub.add_parser("describe", help="list an API's methods "
-                                               "(Discovery service)")
-    describe.add_argument("service", help="e.g. gmail, drive, tasks")
-    describe.add_argument("--api-version", help="e.g. v1 (default: preferred)")
-    describe.set_defaults(func=cmd_describe)
-
-    sub.add_parser("list", help="list available Google APIs").set_defaults(
-        func=cmd_list)
+    register_service(subparsers, "api", "raw calls to any Google API", [
+        Cmd("call", cmd_call, "authorized request to any endpoint",
+            (arg("method", help="GET/POST/PATCH/PUT/DELETE"),
+             arg("path", help="full URL or path under www.googleapis.com "
+                              "(e.g. drive/v3/about)"),
+             arg("--param", action="append", metavar="KEY=VALUE"),
+             arg("--body", help="JSON request body"))),
+        Cmd("describe", cmd_describe,
+            "list an API's methods (Discovery service)",
+            (arg("service", help="e.g. gmail, drive, tasks"),
+             arg("--api-version", help="e.g. v1 (default: preferred)"))),
+        Cmd("list", cmd_list, "list available Google APIs"),
+    ])

@@ -5,6 +5,7 @@ import json
 import time
 
 from gsuite import oauth
+from gsuite.cmdreg import Cmd, Group, arg, register_service
 from gsuite.config import ConfigStore
 from gsuite.errors import CLIError
 
@@ -139,46 +140,26 @@ def cmd_doctor(args) -> int:
 
 
 def register(subparsers) -> None:
-    p = subparsers.add_parser("auth", help="login, accounts, aliases, tokens")
-    sub = p.add_subparsers(dest="subcommand", metavar="<command>")
-
-    login = sub.add_parser("login", help="sign in via browser (loopback OAuth)")
-    login.add_argument("email", nargs="?", help="account email (auto-detected if omitted)")
-    login.add_argument("--services", help="comma-separated services to authorize "
-                       f"(default: {','.join(oauth.DEFAULT_SERVICES)})")
-    login.set_defaults(func=cmd_login)
-
-    logout = sub.add_parser("logout", help="remove an account and its token")
-    logout.add_argument("email")
-    logout.set_defaults(func=cmd_logout)
-
-    sub.add_parser("list", help="list accounts").set_defaults(func=cmd_list)
-
-    status = sub.add_parser("status", help="show current account and token state")
-    status.set_defaults(func=cmd_status)
-
-    switch = sub.add_parser("switch", help="set the default account")
-    switch.add_argument("email")
-    switch.set_defaults(func=cmd_switch)
-
-    alias = sub.add_parser("alias", help="manage account aliases")
-    alias_sub = alias.add_subparsers(dest="alias_command", metavar="<command>")
-    a_set = alias_sub.add_parser("set")
-    a_set.add_argument("name")
-    a_set.add_argument("email")
-    a_set.set_defaults(func=cmd_alias_set)
-    a_rm = alias_sub.add_parser("rm")
-    a_rm.add_argument("name")
-    a_rm.set_defaults(func=cmd_alias_rm)
-    alias_sub.add_parser("list").set_defaults(func=cmd_alias_list)
-
-    creds = sub.add_parser("credentials", help="manage the OAuth client")
-    creds_sub = creds.add_subparsers(dest="credentials_command", metavar="<command>")
-    c_set = creds_sub.add_parser("set", help="store a Desktop-app OAuth client JSON")
-    c_set.add_argument("file")
-    c_set.set_defaults(func=cmd_credentials_set)
-
-    token = sub.add_parser("token", help="print a fresh access token (for scripts)")
-    token.set_defaults(func=cmd_token)
-
-    sub.add_parser("doctor", help="diagnose auth setup").set_defaults(func=cmd_doctor)
+    register_service(subparsers, "auth", "login, accounts, aliases, tokens", [
+        Cmd("login", cmd_login, "sign in via browser (loopback OAuth)",
+            (arg("email", nargs="?",
+                 help="account email (auto-detected if omitted)"),
+             arg("--services", help="comma-separated services to authorize "
+                 f"(default: {','.join(oauth.DEFAULT_SERVICES)})"))),
+        Cmd("logout", cmd_logout, "remove an account and its token",
+            (arg("email"),)),
+        Cmd("list", cmd_list, "list accounts"),
+        Cmd("status", cmd_status, "show current account and token state"),
+        Cmd("switch", cmd_switch, "set the default account", (arg("email"),)),
+        Group("alias", "manage account aliases", (
+            Cmd("set", cmd_alias_set, args=(arg("name"), arg("email"))),
+            Cmd("rm", cmd_alias_rm, args=(arg("name"),)),
+            Cmd("list", cmd_alias_list),
+        )),
+        Group("credentials", "manage the OAuth client", (
+            Cmd("set", cmd_credentials_set,
+                "store a Desktop-app OAuth client JSON", (arg("file"),)),
+        )),
+        Cmd("token", cmd_token, "print a fresh access token (for scripts)"),
+        Cmd("doctor", cmd_doctor, "diagnose auth setup"),
+    ])
