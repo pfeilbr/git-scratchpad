@@ -27,3 +27,16 @@ def test_unknown_command_exits_2(capsys):
     with pytest.raises(SystemExit) as exc:
         main(["not-a-service"])
     assert exc.value.code == 2
+
+
+def test_module_is_runnable_with_python_dash_m():
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "gsuite.cli", "--version"],
+        capture_output=True, text=True,
+        cwd=__file__.rsplit("/tests/", 1)[0],
+    )
+    assert result.returncode == 0
+    assert "gsuite" in result.stdout
