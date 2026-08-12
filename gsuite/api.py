@@ -10,6 +10,11 @@ from gsuite.config import ConfigStore
 from gsuite.errors import APIError
 
 
+def quote_id(value: str) -> str:
+    """Percent-encode an id/email for safe use as a URL path segment."""
+    return urllib.parse.quote(value, safe="")
+
+
 class Client:
     def __init__(self, store: ConfigStore, email: str):
         self.store = store

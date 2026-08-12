@@ -26,6 +26,11 @@ def emit(args, rows: list[dict], columns: list[tuple]) -> None:
         print("  ".join(cell.ljust(w) for cell, w in zip(row, widths)).rstrip())
 
 
+def confirm(*parts) -> None:
+    """Action confirmation line: joins the non-empty parts with spaces."""
+    print(" ".join(str(p) for p in parts if p not in (None, "")))
+
+
 def emit_obj(args, obj: dict, fields: list[tuple] | None = None) -> None:
     """Single-object output: `key: value` lines, or full JSON with --json."""
     if getattr(args, "json", False):
