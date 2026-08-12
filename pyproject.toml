@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gsuite-cli"
+description = "Unified Google Workspace CLI — combines the command surfaces of Google's gws and steipete's gog with a friendlier auth UX"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = []
+dynamic = ["version"]
+
+[project.scripts]
+gsuite = "gsuite.cli:entrypoint"
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+include = ["gsuite*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "gsuite.__version__" }
+
+[tool.pytest.ini_options]
+addopts = "-q -p no:cacheprovider"
+testpaths = ["tests"]
