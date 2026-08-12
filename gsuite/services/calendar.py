@@ -2,17 +2,23 @@
 from __future__ import annotations
 
 import datetime as dt
-import urllib.parse
 
-from gsuite.api import Client
+from gsuite.api import Client, quote_id
+from gsuite.cmdreg import Cmd, arg, max_flag, register_service
 from gsuite.errors import CLIError
-from gsuite.output import emit, emit_obj
+from gsuite.output import confirm, emit, emit_obj
+from gsuite.services._common import emit_paged
 
 BASE = "https://www.googleapis.com/calendar/v3"
 
+CALENDAR_FLAG = arg("--calendar", default="primary",
+                    help="calendar id (default: primary)")
+EVENT_COLUMNS = [("ID", "id"), ("START", lambda e: _when(e)),
+                 ("SUMMARY", "summary"), ("LOCATION", "location")]
+
 
 def _cal_url(calendar_id: str, suffix: str = "") -> str:
-    return f"{BASE}/calendars/{urllib.parse.quote(calendar_id, safe='')}{suffix}"
+    return f"{BASE}/calendars/{quote_id(calendar_id)}{suffix}"
 
 
 def _when(event: dict, key: str = "start") -> str:
@@ -41,47 +47,40 @@ def _day_bounds(date_str: str) -> tuple[str, str]:
             f"{(day + dt.timedelta(days=1)).isoformat()}T00:00:00Z")
 
 
-def _emit_events(args, events: list[dict]) -> None:
-    emit(args, events, [("ID", "id"), ("START", _when),
-                        ("SUMMARY", "summary"), ("LOCATION", "location")])
-
-
-def cmd_calendars(args) -> int:
-    items = list(Client.for_args(args).paged(f"{BASE}/users/me/calendarList"))
-    emit(args, items, [("ID", "id"), ("SUMMARY", "summary"),
-                       ("PRIMARY", lambda c: "yes" if c.get("primary") else "")])
-    return 0
-
-
-def _list_events(args, time_min: str | None, time_max: str | None,
-                 limit: int | None) -> list[dict]:
-    params = {"singleEvents": "true", "orderBy": "startTime"}
-    if time_min:
-        params["timeMin"] = time_min
-    if time_max:
-        params["timeMax"] = time_max
-    return list(Client.for_args(args).paged(_cal_url(args.calendar, "/events"),
-                                            params=params, limit=limit))
-
-
 def _to_rfc3339(value: str | None) -> str | None:
     if value is None:
         return None
     return value if "T" in value else f"{value}T00:00:00Z"
 
 
+def _emit_window(args, time_min: str | None, time_max: str | None,
+                 limit: int | None) -> None:
+    params = {"singleEvents": "true", "orderBy": "startTime"}
+    if time_min:
+        params["timeMin"] = time_min
+    if time_max:
+        params["timeMax"] = time_max
+    emit_paged(args, _cal_url(args.calendar, "/events"), EVENT_COLUMNS,
+               params=params, limit=limit)
+
+
+def cmd_calendars(args) -> int:
+    emit_paged(args, f"{BASE}/users/me/calendarList",
+               [("ID", "id"), ("SUMMARY", "summary"),
+                ("PRIMARY", lambda c: "yes" if c.get("primary") else "")])
+    return 0
+
+
 def cmd_events(args) -> int:
-    events = _list_events(args, _to_rfc3339(getattr(args, "from")),
-                          _to_rfc3339(args.to), args.max)
-    _emit_events(args, events)
+    _emit_window(args, _to_rfc3339(getattr(args, "from")),
+                 _to_rfc3339(args.to), args.max)
     return 0
 
 
 def cmd_agenda(args) -> int:
     date = args.date or dt.date.today().isoformat()
     time_min, time_max = _day_bounds(date)
-    events = _list_events(args, time_min, time_max, None)
-    _emit_events(args, events)
+    _emit_window(args, time_min, time_max, None)
     return 0
 
 
@@ -105,7 +104,7 @@ def cmd_create(args) -> int:
         body["location"] = args.location
     created = Client.for_args(args).post(_cal_url(args.calendar, "/events"),
                                          json_body=body)
-    print(f"created {created.get('id', '')} {created.get('htmlLink', '')}".strip())
+    confirm("created", created.get("id"), created.get("htmlLink"))
     return 0
 
 
@@ -120,52 +119,27 @@ def cmd_get(args) -> int:
 
 def cmd_delete(args) -> int:
     Client.for_args(args).delete(_cal_url(args.calendar, f"/events/{args.id}"))
-    print(f"deleted {args.id}")
+    confirm("deleted", args.id)
     return 0
 
 
-def _add_calendar_flag(parser) -> None:
-    parser.add_argument("--calendar", default="primary",
-                        help="calendar id (default: primary)")
-
-
 def register(subparsers) -> None:
-    p = subparsers.add_parser("calendar", help="calendars, events, agenda")
-    sub = p.add_subparsers(dest="subcommand", metavar="<command>")
-
-    sub.add_parser("calendars", help="list calendars").set_defaults(
-        func=cmd_calendars)
-
-    events = sub.add_parser("events", help="list events in a time window")
-    _add_calendar_flag(events)
-    events.add_argument("--from", dest="from", metavar="WHEN",
-                        help="RFC3339 or YYYY-MM-DD lower bound")
-    events.add_argument("--to", help="RFC3339 or YYYY-MM-DD upper bound")
-    events.add_argument("--max", type=int, default=50)
-    events.set_defaults(func=cmd_events)
-
-    agenda = sub.add_parser("agenda", help="events for one day (default: today)")
-    _add_calendar_flag(agenda)
-    agenda.add_argument("--date", help="YYYY-MM-DD")
-    agenda.set_defaults(func=cmd_agenda)
-
-    create = sub.add_parser("create", help="create an event")
-    _add_calendar_flag(create)
-    create.add_argument("--summary", required=True)
-    create.add_argument("--start", required=True,
-                        help="YYYY-MM-DD (all-day) or YYYY-MM-DDTHH:MM")
-    create.add_argument("--end")
-    create.add_argument("--attendees", help="comma-separated emails")
-    create.add_argument("--description")
-    create.add_argument("--location")
-    create.set_defaults(func=cmd_create)
-
-    get = sub.add_parser("get", help="show one event")
-    _add_calendar_flag(get)
-    get.add_argument("id")
-    get.set_defaults(func=cmd_get)
-
-    delete = sub.add_parser("delete", help="delete an event")
-    _add_calendar_flag(delete)
-    delete.add_argument("id")
-    delete.set_defaults(func=cmd_delete)
+    register_service(subparsers, "calendar", "calendars, events, agenda", [
+        Cmd("calendars", cmd_calendars, "list calendars"),
+        Cmd("events", cmd_events, "list events in a time window",
+            (CALENDAR_FLAG,
+             arg("--from", dest="from", metavar="WHEN",
+                 help="RFC3339 or YYYY-MM-DD lower bound"),
+             arg("--to", help="RFC3339 or YYYY-MM-DD upper bound"),
+             max_flag(50))),
+        Cmd("agenda", cmd_agenda, "events for one day (default: today)",
+            (CALENDAR_FLAG, arg("--date", help="YYYY-MM-DD"))),
+        Cmd("create", cmd_create, "create an event",
+            (CALENDAR_FLAG, arg("--summary", required=True),
+             arg("--start", required=True,
+                 help="YYYY-MM-DD (all-day) or YYYY-MM-DDTHH:MM"),
+             arg("--end"), arg("--attendees", help="comma-separated emails"),
+             arg("--description"), arg("--location"))),
+        Cmd("get", cmd_get, "show one event", (CALENDAR_FLAG, arg("id"))),
+        Cmd("delete", cmd_delete, "delete an event", (CALENDAR_FLAG, arg("id"))),
+    ])

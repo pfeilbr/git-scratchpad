@@ -5,10 +5,14 @@ import base64
 from email.message import EmailMessage
 
 from gsuite.api import Client
+from gsuite.cmdreg import Cmd, Group, arg, max_flag, register_service
 from gsuite.errors import CLIError
-from gsuite.output import emit, emit_obj
+from gsuite.output import confirm, emit, emit_obj
 
 BASE = "https://gmail.googleapis.com/gmail/v1/users/me"
+
+COMPOSE_ARGS = (arg("--to", required=True), arg("--subject", default=""),
+                arg("--body", default=""), arg("--cc"), arg("--bcc"))
 
 
 def _b64u_decode(data: str) -> str:
@@ -92,14 +96,14 @@ def _send(client: Client, raw: str, thread_id: str | None = None) -> dict:
     body: dict = {"raw": raw}
     if thread_id:
         body["threadId"] = thread_id
-    return client.post(f"{BASE}/messages/send", json_body=body)
+    sent = client.post(f"{BASE}/messages/send", json_body=body)
+    confirm("sent", sent.get("id"))
+    return sent
 
 
 def cmd_send(args) -> int:
-    client = Client.for_args(args)
     raw = _build_mime(args.to, args.subject, args.body, cc=args.cc, bcc=args.bcc)
-    sent = _send(client, raw)
-    print(f"sent {sent.get('id', '')}".strip())
+    _send(Client.for_args(args), raw)
     return 0
 
 
@@ -116,8 +120,7 @@ def cmd_reply(args) -> int:
         extra["References"] = headers["message-id"]
     raw = _build_mime(headers.get("reply-to") or headers.get("from", ""),
                       subject, args.body, extra_headers=extra)
-    sent = _send(client, raw, thread_id=original.get("threadId"))
-    print(f"sent {sent.get('id', '')}".strip())
+    _send(client, raw, thread_id=original.get("threadId"))
     return 0
 
 
@@ -134,14 +137,13 @@ def cmd_forward(args) -> int:
               f"Subject: {headers.get('subject', '')}\n\n"
               f"{_plain_body(original.get('payload', {}))}")
     body = f"{args.body}\n\n{quoted}" if args.body else quoted
-    sent = _send(client, _build_mime(args.to, subject, body))
-    print(f"sent {sent.get('id', '')}".strip())
+    _send(client, _build_mime(args.to, subject, body))
     return 0
 
 
 def cmd_trash(args) -> int:
     Client.for_args(args).post(f"{BASE}/messages/{args.id}/trash")
-    print(f"trashed {args.id}")
+    confirm("trashed", args.id)
     return 0
 
 
@@ -163,26 +165,25 @@ def cmd_labels_list(args) -> int:
 def cmd_labels_create(args) -> int:
     created = Client.for_args(args).post(f"{BASE}/labels",
                                          json_body={"name": args.name})
-    print(f"created {created.get('id', '')} {created.get('name', '')}".strip())
+    confirm("created", created.get("id"), created.get("name"))
+    return 0
+
+
+def _modify_labels(args, action_key: str, verb: str, preposition: str) -> int:
+    client = Client.for_args(args)
+    label_id = _label_id(client, args.label)
+    client.post(f"{BASE}/messages/{args.id}/modify",
+                json_body={action_key: [label_id]})
+    confirm(verb, args.label, preposition, args.id)
     return 0
 
 
 def cmd_labels_apply(args) -> int:
-    client = Client.for_args(args)
-    label_id = _label_id(client, args.label)
-    client.post(f"{BASE}/messages/{args.id}/modify",
-                json_body={"addLabelIds": [label_id]})
-    print(f"applied {args.label} to {args.id}")
-    return 0
+    return _modify_labels(args, "addLabelIds", "applied", "to")
 
 
 def cmd_labels_remove(args) -> int:
-    client = Client.for_args(args)
-    label_id = _label_id(client, args.label)
-    client.post(f"{BASE}/messages/{args.id}/modify",
-                json_body={"removeLabelIds": [label_id]})
-    print(f"removed {args.label} from {args.id}")
-    return 0
+    return _modify_labels(args, "removeLabelIds", "removed", "from")
 
 
 def cmd_drafts_list(args) -> int:
@@ -195,68 +196,29 @@ def cmd_drafts_create(args) -> int:
     raw = _build_mime(args.to, args.subject, args.body, cc=args.cc, bcc=args.bcc)
     draft = Client.for_args(args).post(f"{BASE}/drafts",
                                        json_body={"message": {"raw": raw}})
-    print(f"draft {draft.get('id', '')}".strip())
+    confirm("draft", draft.get("id"))
     return 0
 
 
-def _add_compose_flags(parser, require_to=True) -> None:
-    parser.add_argument("--to", required=require_to)
-    parser.add_argument("--subject", default="")
-    parser.add_argument("--body", default="")
-    parser.add_argument("--cc")
-    parser.add_argument("--bcc")
-
-
 def register(subparsers) -> None:
-    p = subparsers.add_parser("gmail", help="search, read, send, labels, drafts")
-    sub = p.add_subparsers(dest="subcommand", metavar="<command>")
-
-    search = sub.add_parser("search", help="search messages (Gmail query syntax)")
-    search.add_argument("query")
-    search.add_argument("--max", type=int, default=20)
-    search.set_defaults(func=cmd_search)
-
-    get = sub.add_parser("get", help="read a message (plain-text body)")
-    get.add_argument("id")
-    get.set_defaults(func=cmd_get)
-
-    send = sub.add_parser("send", help="send an email")
-    _add_compose_flags(send)
-    send.set_defaults(func=cmd_send)
-
-    reply = sub.add_parser("reply", help="reply on the original thread")
-    reply.add_argument("id")
-    reply.add_argument("--body", required=True)
-    reply.set_defaults(func=cmd_reply)
-
-    fwd = sub.add_parser("forward", help="forward a message")
-    fwd.add_argument("id")
-    fwd.add_argument("--to", required=True)
-    fwd.add_argument("--body", default="")
-    fwd.set_defaults(func=cmd_forward)
-
-    trash = sub.add_parser("trash", help="move a message to trash")
-    trash.add_argument("id")
-    trash.set_defaults(func=cmd_trash)
-
-    labels = sub.add_parser("labels", help="manage labels")
-    labels_sub = labels.add_subparsers(dest="labels_command", metavar="<command>")
-    labels_sub.add_parser("list").set_defaults(func=cmd_labels_list)
-    l_create = labels_sub.add_parser("create")
-    l_create.add_argument("name")
-    l_create.set_defaults(func=cmd_labels_create)
-    l_apply = labels_sub.add_parser("apply")
-    l_apply.add_argument("id")
-    l_apply.add_argument("label")
-    l_apply.set_defaults(func=cmd_labels_apply)
-    l_remove = labels_sub.add_parser("remove")
-    l_remove.add_argument("id")
-    l_remove.add_argument("label")
-    l_remove.set_defaults(func=cmd_labels_remove)
-
-    drafts = sub.add_parser("drafts", help="manage drafts")
-    drafts_sub = drafts.add_subparsers(dest="drafts_command", metavar="<command>")
-    drafts_sub.add_parser("list").set_defaults(func=cmd_drafts_list)
-    d_create = drafts_sub.add_parser("create")
-    _add_compose_flags(d_create)
-    d_create.set_defaults(func=cmd_drafts_create)
+    register_service(subparsers, "gmail", "search, read, send, labels, drafts", [
+        Cmd("search", cmd_search, "search messages (Gmail query syntax)",
+            (arg("query"), max_flag(20))),
+        Cmd("get", cmd_get, "read a message (plain-text body)", (arg("id"),)),
+        Cmd("send", cmd_send, "send an email", COMPOSE_ARGS),
+        Cmd("reply", cmd_reply, "reply on the original thread",
+            (arg("id"), arg("--body", required=True))),
+        Cmd("forward", cmd_forward, "forward a message",
+            (arg("id"), arg("--to", required=True), arg("--body", default=""))),
+        Cmd("trash", cmd_trash, "move a message to trash", (arg("id"),)),
+        Group("labels", "manage labels", (
+            Cmd("list", cmd_labels_list),
+            Cmd("create", cmd_labels_create, args=(arg("name"),)),
+            Cmd("apply", cmd_labels_apply, args=(arg("id"), arg("label"))),
+            Cmd("remove", cmd_labels_remove, args=(arg("id"), arg("label"))),
+        )),
+        Group("drafts", "manage drafts", (
+            Cmd("list", cmd_drafts_list),
+            Cmd("create", cmd_drafts_create, args=COMPOSE_ARGS),
+        )),
+    ])
