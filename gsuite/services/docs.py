@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from gsuite.api import Client
+from gsuite.cmdreg import Cmd, arg, register_service
+from gsuite.output import confirm
 
 BASE = "https://docs.googleapis.com/v1/documents"
 
@@ -16,7 +18,7 @@ def _extract_text(document: dict) -> str:
 
 def cmd_create(args) -> int:
     doc = Client.for_args(args).post(BASE, json_body={"title": args.title})
-    print(f"created {doc.get('documentId', '')} {doc.get('title', '')}".strip())
+    confirm("created", doc.get("documentId"), doc.get("title"))
     return 0
 
 
@@ -31,23 +33,15 @@ def cmd_append(args) -> int:
         "requests": [{"insertText": {"endOfSegmentLocation": {},
                                      "text": args.text}}],
     })
-    print(f"appended to {args.id}")
+    confirm("appended to", args.id)
     return 0
 
 
 def register(subparsers) -> None:
-    p = subparsers.add_parser("docs", help="Google Docs: create, cat, append")
-    sub = p.add_subparsers(dest="subcommand", metavar="<command>")
-
-    create = sub.add_parser("create", help="create a document")
-    create.add_argument("--title", required=True)
-    create.set_defaults(func=cmd_create)
-
-    cat = sub.add_parser("cat", help="print a document's plain text")
-    cat.add_argument("id")
-    cat.set_defaults(func=cmd_cat)
-
-    append = sub.add_parser("append", help="append text to a document")
-    append.add_argument("id")
-    append.add_argument("--text", required=True)
-    append.set_defaults(func=cmd_append)
+    register_service(subparsers, "docs", "Google Docs: create, cat, append", [
+        Cmd("create", cmd_create, "create a document",
+            (arg("--title", required=True),)),
+        Cmd("cat", cmd_cat, "print a document's plain text", (arg("id"),)),
+        Cmd("append", cmd_append, "append text to a document",
+            (arg("id"), arg("--text", required=True))),
+    ])

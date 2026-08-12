@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from gsuite.api import Client
-from gsuite.output import emit
+from gsuite.cmdreg import Cmd, arg, max_flag, register_service
+from gsuite.output import confirm, emit
+from gsuite.services._common import emit_paged
 
 BASE = "https://people.googleapis.com/v1"
 PERSON_FIELDS = "names,emailAddresses,phoneNumbers"
@@ -15,11 +17,9 @@ COLUMNS = [
 
 
 def cmd_list(args) -> int:
-    people = Client.for_args(args).paged(
-        f"{BASE}/people/me/connections",
-        params={"personFields": PERSON_FIELDS, "pageSize": 100},
-        key="connections", limit=args.max)
-    emit(args, list(people), COLUMNS)
+    emit_paged(args, f"{BASE}/people/me/connections", COLUMNS,
+               params={"personFields": PERSON_FIELDS, "pageSize": 100},
+               key="connections", limit=args.max)
     return 0
 
 
@@ -40,34 +40,22 @@ def cmd_create(args) -> int:
         body["phoneNumbers"] = [{"value": args.phone}]
     person = Client.for_args(args).post(f"{BASE}/people:createContact",
                                         json_body=body)
-    print(f"created {person.get('resourceName', '')}".strip())
+    confirm("created", person.get("resourceName"))
     return 0
 
 
 def cmd_rm(args) -> int:
     Client.for_args(args).delete(f"{BASE}/{args.resource}:deleteContact")
-    print(f"deleted {args.resource}")
+    confirm("deleted", args.resource)
     return 0
 
 
 def register(subparsers) -> None:
-    p = subparsers.add_parser("contacts", help="list, search, create contacts")
-    sub = p.add_subparsers(dest="subcommand", metavar="<command>")
-
-    lst = sub.add_parser("list", help="list contacts")
-    lst.add_argument("--max", type=int, default=100)
-    lst.set_defaults(func=cmd_list)
-
-    search = sub.add_parser("search", help="search contacts")
-    search.add_argument("query")
-    search.set_defaults(func=cmd_search)
-
-    create = sub.add_parser("create", help="create a contact")
-    create.add_argument("--name", required=True)
-    create.add_argument("--email")
-    create.add_argument("--phone")
-    create.set_defaults(func=cmd_create)
-
-    rm = sub.add_parser("rm", help="delete a contact by resource name")
-    rm.add_argument("resource", help="e.g. people/c123")
-    rm.set_defaults(func=cmd_rm)
+    register_service(subparsers, "contacts", "list, search, create contacts", [
+        Cmd("list", cmd_list, "list contacts", (max_flag(100),)),
+        Cmd("search", cmd_search, "search contacts", (arg("query"),)),
+        Cmd("create", cmd_create, "create a contact",
+            (arg("--name", required=True), arg("--email"), arg("--phone"))),
+        Cmd("rm", cmd_rm, "delete a contact by resource name",
+            (arg("resource", help="e.g. people/c123"),)),
+    ])
