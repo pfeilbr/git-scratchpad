@@ -40,8 +40,9 @@ def main() -> int:
         print("\n".join((comp.stdout + comp.stderr).splitlines()[-TAIL_LINES:]))
         return 1
 
-    test = run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider",
-                "--tb=line", "tests"])
+    # -q comes from addopts in pyproject.toml; adding it again would make
+    # pytest -qq and suppress the one-line summary this script depends on.
+    test = run([sys.executable, "-m", "pytest", "--tb=line", "tests"])
     out = (test.stdout + test.stderr).splitlines()
     summary = next(
         (l for l in reversed(out)
