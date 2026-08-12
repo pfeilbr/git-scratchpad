@@ -22,8 +22,12 @@ class FakeTransport:
         self.calls.append(
             {"method": method, "url": url, "headers": headers or {}, "data": data}
         )
-        for m, part, status, body in self.routes:
+        # one-shot FIFO: each programmed route answers exactly one request,
+        # so ordered sequences (e.g. 401 then 200) are expressible.
+        for route in self.routes:
+            m, part, status, body = route
             if m == method and part in url:
+                self.routes.remove(route)
                 payload = body if isinstance(body, bytes) else json.dumps(body).encode()
                 return status, {"content-type": "application/json"}, payload
         raise AssertionError(f"unexpected request: {method} {url}")
@@ -43,6 +47,21 @@ def fake_transport(monkeypatch):
     ft = FakeTransport()
     monkeypatch.setattr(gsuite.transport, "request", ft)
     return ft
+
+
+@pytest.fixture
+def authed(config_dir):
+    """A config store with a logged-in default account and fresh token."""
+    import time
+
+    from gsuite.config import ConfigStore
+
+    store = ConfigStore()
+    store.save_client({"client_id": "cid", "client_secret": "csec"})
+    store.add_account("a@x.com")
+    store.save_token("a@x.com", {"access_token": "tok", "refresh_token": "ref",
+                                 "expiry": time.time() + 3600})
+    return store
 
 
 @pytest.fixture
