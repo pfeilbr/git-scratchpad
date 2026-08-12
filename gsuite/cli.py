@@ -10,7 +10,7 @@ from gsuite.errors import CLIError
 
 # Service modules register their own subcommands. Appended to as the CLI
 # grows service by service (red-green, one increment per service).
-SERVICE_MODULES: list[str] = ["auth", "gmail", "calendar"]
+SERVICE_MODULES: list[str] = ["auth", "gmail", "calendar", "drive"]
 
 
 def build_parser() -> argparse.ArgumentParser:
