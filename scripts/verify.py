@@ -9,7 +9,8 @@ cheap to read (token-frugal for humans and agents alike).
                                     (run before implementing, to prove the new
                                     tests actually test something)
 
-Gate = byte-compile all sources + full pytest suite.
+Gate = byte-compile all sources + full pytest suite + reference-docs sync
+(scripts/gen_docs.py --check).
 Determinism: fixed hash seed, no cache plugins, no bytecode writes.
 """
 from __future__ import annotations
@@ -49,7 +50,11 @@ def main() -> int:
          if re.search(r"(passed|failed|error|no tests ran)", l)),
         "no summary",
     )
-    failed = test.returncode != 0 or comp.returncode != 0
+    docs = run([sys.executable, os.path.join("scripts", "gen_docs.py"),
+                "--check"])
+    failed = test.returncode != 0 or comp.returncode != 0 or docs.returncode != 0
+    if docs.returncode != 0:
+        summary = f"{summary.strip()} + STALE DOCS"
 
     if opts.red:
         if failed:

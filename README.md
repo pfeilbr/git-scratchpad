@@ -41,10 +41,25 @@ Tokens are stored per account under `~/.config/gsuite/tokens/` (mode 0600)
 and refreshed automatically. `GSUITE_CLIENT_ID` / `GSUITE_CLIENT_SECRET`
 override the stored client; `GSUITE_CONFIG_DIR` relocates all state.
 
+## Documentation
+
+Full docs live in [`docs/`](docs/index.md) (an MkDocs Material site —
+`pip install mkdocs-material && mkdocs serve`, or browse the Markdown right
+on GitHub):
+
+- [Architecture](docs/architecture.md) — layer map and sequence diagrams
+- [Authentication guide](docs/guides/authentication.md)
+- [Scripting & automation](docs/guides/scripting.md)
+- [Command reference](docs/reference/index.md) — generated from the CLI's own
+  parser tree by `scripts/gen_docs.py`, with options tables and examples
+- [Development](docs/development.md) — the red-green workflow
+
 ## Commands
 
 Global flags (before the service name): `-a/--account <email|alias>`,
-`--json` for machine-readable output.
+`--json` for machine-readable output. The summary below is the short
+version; see the [command reference](docs/reference/index.md) for options
+tables and worked examples.
 
 ### `gsuite auth`
 `login [email] [--services a,b]` · `logout <email>` · `list` · `status` ·

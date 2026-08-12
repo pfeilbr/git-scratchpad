@@ -1,0 +1,113 @@
+# gsuite calendar
+
+Calendars, events, agenda.
+
+```text
+usage: gsuite calendar [-h] <command> ...
+```
+
+Global flags `-a/--account <email|alias>` and `--json` go *before* the service name.
+
+## Commands
+
+### `gsuite calendar calendars`
+
+List calendars.
+
+```text
+usage: gsuite calendar calendars [-h]
+```
+
+### `gsuite calendar events`
+
+List events in a time window.
+
+```text
+usage: gsuite calendar events [-h] [--calendar CALENDAR] [--from WHEN]
+                              [--to TO] [--max MAX]
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--calendar CALENDAR` |  | `primary` | calendar id (default: primary) |
+| `--from WHEN` |  |  | RFC3339 or YYYY-MM-DD lower bound |
+| `--to TO` |  |  | RFC3339 or YYYY-MM-DD upper bound |
+| `--max MAX` |  | `50` | maximum results (default: 50) |
+
+### `gsuite calendar agenda`
+
+Events for one day (default: today).
+
+```text
+usage: gsuite calendar agenda [-h] [--calendar CALENDAR] [--date DATE]
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--calendar CALENDAR` |  | `primary` | calendar id (default: primary) |
+| `--date DATE` |  |  | YYYY-MM-DD |
+
+### `gsuite calendar create`
+
+Create an event.
+
+```text
+usage: gsuite calendar create [-h] [--calendar CALENDAR] --summary SUMMARY
+                              --start START [--end END]
+                              [--attendees ATTENDEES]
+                              [--description DESCRIPTION]
+                              [--location LOCATION]
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--calendar CALENDAR` |  | `primary` | calendar id (default: primary) |
+| `--summary SUMMARY` | yes |  |  |
+| `--start START` | yes |  | YYYY-MM-DD (all-day) or YYYY-MM-DDTHH:MM |
+| `--end END` |  |  |  |
+| `--attendees ATTENDEES` |  |  | comma-separated emails |
+| `--description DESCRIPTION` |  |  |  |
+| `--location LOCATION` |  |  |  |
+
+### `gsuite calendar get`
+
+Show one event.
+
+```text
+usage: gsuite calendar get [-h] [--calendar CALENDAR] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--calendar CALENDAR` |  | `primary` | calendar id (default: primary) |
+| `id` | yes |  |  |
+
+### `gsuite calendar delete`
+
+Delete an event.
+
+```text
+usage: gsuite calendar delete [-h] [--calendar CALENDAR] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--calendar CALENDAR` |  | `primary` | calendar id (default: primary) |
+| `id` | yes |  |  |
+
+## Examples
+
+**Today's agenda**
+
+```console
+$ gsuite calendar agenda
+ID     START                 SUMMARY   LOCATION
+e1a2   2026-01-05T09:00:00Z  Standup   Zoom
+```
+
+**Create a timed event with attendees**
+
+```console
+$ gsuite calendar create --summary 'Design review' --start 2026-01-07T14:00 --end 2026-01-07T15:00 --attendees alice@example.com,bob@example.com
+created e9f3 https://www.google.com/calendar/event?eid=...
+```

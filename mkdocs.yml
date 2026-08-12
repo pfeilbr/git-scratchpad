@@ -1,0 +1,52 @@
+site_name: gsuite-cli
+site_description: Unified Google Workspace CLI — gws + gog command surfaces with a friendly auth UX
+repo_url: https://github.com/pfeilbr/git-scratchpad
+repo_name: gsuite-cli
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.footer
+    - content.code.copy
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/weather-night
+        name: dark mode
+    - scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: light mode
+
+markdown_extensions:
+  - admonition
+  - tables
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Guides:
+      - Authentication: guides/authentication.md
+      - Scripting & automation: guides/scripting.md
+  - Command reference:
+      - Overview: reference/index.md
+      - auth: reference/auth.md
+      - gmail: reference/gmail.md
+      - calendar: reference/calendar.md
+      - drive: reference/drive.md
+      - docs: reference/docs.md
+      - sheets: reference/sheets.md
+      - slides: reference/slides.md
+      - contacts: reference/contacts.md
+      - tasks: reference/tasks.md
+      - chat: reference/chat.md
+      - keep: reference/keep.md
+      - admin: reference/admin.md
+      - api: reference/api.md
+  - Development: development.md
