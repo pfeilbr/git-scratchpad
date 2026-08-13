@@ -69,7 +69,7 @@ options tables and worked examples.
 | [`gsuite auth`](docs/reference/auth.md)<br/><sub>login, accounts, aliases, tokens</sub> | `login` · `logout` · `list` · `status` · `switch` · `alias set|rm|list` · `credentials set` · `token` · `doctor` |
 | [`gsuite gmail`](docs/reference/gmail.md)<br/><sub>search, read, send, labels, drafts</sub> | `search` · `get` · `thread` · `attachments` · `send` · `reply` · `forward` · `trash` · `labels list|create|apply|remove` · `drafts list|create` · `vacation show|set|off` · `signature show|set` · `filters list|create|rm` · `batch-modify` |
 | [`gsuite calendar`](docs/reference/calendar.md)<br/><sub>calendars, events, agenda</sub> | `calendars` · `events` · `agenda` · `create` · `get` · `update` · `respond` · `freebusy` · `delete` |
-| [`gsuite drive`](docs/reference/drive.md)<br/><sub>files: ls, search, upload, share</sub> | `ls` · `search` · `audit` · `info` · `mv` · `mkdir` · `upload` · `download` · `export` · `share` · `permissions` · `trash` · `restore` · `rm` · `copy` |
+| [`gsuite drive`](docs/reference/drive.md)<br/><sub>files: ls, search, upload, share</sub> | `ls` · `search` · `audit` · `info` · `mv` · `mkdir` · `upload` · `download` · `export` · `share` · `permissions` · `trash` · `restore` · `rm` · `copy` · `drives` |
 | [`gsuite docs`](docs/reference/docs.md)<br/><sub>Google Docs: create, cat, append, replace</sub> | `create` · `cat` · `append` · `replace` |
 | [`gsuite sheets`](docs/reference/sheets.md)<br/><sub>spreadsheets: read/append/update</sub> | `create` · `read` · `append` · `update` · `clear` · `tabs` · `add-tab` · `rm-tab` |
 | [`gsuite slides`](docs/reference/slides.md)<br/><sub>presentations: create, info, cat, add</sub> | `create` · `info` · `cat` · `add` |

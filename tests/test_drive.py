@@ -165,3 +165,99 @@ def test_trash_and_restore(drive):
     out = run("drive", "restore", "f1")
     assert json.loads(ft.calls[-1]["data"]) == {"trashed": False}
     assert "restored f1" in out
+
+
+# -- shared drives ---------------------------------------------------------
+
+DRIVE_ROW = {"id": "d1", "name": "Team Drive",
+             "createdTime": "2026-02-01T00:00:00Z"}
+
+
+def test_drives_lists_shared_drives(drive):
+    ft, run = drive
+    ft.add("GET", "drive/v3/drives", {"drives": [DRIVE_ROW]})
+    out = run("drive", "drives")
+    assert "d1" in out
+    assert "Team Drive" in out
+    assert "2026-02-01T00:00:00Z" in out
+    assert "CREATED" in out
+    assert "pageSize=100" in ft.calls[0]["url"]
+
+
+def test_ls_sends_shared_drive_params(drive):
+    ft, run = drive
+    ft.add("GET", "drive/v3/files", {"files": [FILE_ROW]})
+    run("drive", "ls")
+    url = ft.calls[0]["url"]
+    assert "supportsAllDrives=true" in url
+    assert "includeItemsFromAllDrives=true" in url
+    # existing behavior must survive
+    assert "%27root%27+in+parents" in url
+    assert "fields=files" in url
+    assert "corpora" not in url
+
+
+def test_ls_drive_flag_scopes_to_one_shared_drive(drive):
+    ft, run = drive
+    ft.add("GET", "drive/v3/files", {"files": []})
+    run("drive", "ls", "--drive", "D1")
+    url = ft.calls[0]["url"]
+    assert "corpora=drive" in url
+    assert "driveId=D1" in url
+    assert "supportsAllDrives=true" in url
+    assert "includeItemsFromAllDrives=true" in url
+
+
+def test_search_drive_flag_scopes_to_one_shared_drive(drive):
+    ft, run = drive
+    ft.add("GET", "drive/v3/files", {"files": [FILE_ROW]})
+    run("drive", "search", "notes", "--drive", "D2")
+    url = ft.calls[0]["url"]
+    assert "corpora=drive" in url
+    assert "driveId=D2" in url
+    assert "name+contains" in url
+
+
+def test_audit_sees_all_drives(drive):
+    ft, run = drive
+    ft.add("GET", "drive/v3/files", {"files": []})
+    run("drive", "audit")
+    url = ft.calls[0]["url"]
+    assert "supportsAllDrives=true" in url
+    assert "includeItemsFromAllDrives=true" in url
+
+
+def test_mutations_support_all_drives(drive):
+    ft, run = drive
+    ft.add("PATCH", "files/f1", {"id": "f1"})
+    run("drive", "trash", "f1")
+    assert "supportsAllDrives=true" in ft.calls[0]["url"]
+    assert json.loads(ft.calls[0]["data"]) == {"trashed": True}
+    ft.add("GET", "files/f1?fields=parents", {"parents": ["old1"]})
+    ft.add("PATCH", "files/f1", {"id": "f1"})
+    run("drive", "mv", "f1", "--parent", "newp")
+    patch = ft.calls[-1]
+    assert "supportsAllDrives=true" in patch["url"]
+    assert "addParents=newp" in patch["url"]
+    assert "removeParents=old1" in patch["url"]
+    ft.add("DELETE", "files/f1", {})
+    run("drive", "rm", "f1")
+    assert "supportsAllDrives=true" in ft.calls[-1]["url"]
+
+
+def test_download_and_export_keep_params_and_support_all_drives(drive, tmp_path):
+    ft, run = drive
+    ft.add("GET", "files/f1?alt=media", b"binary-bytes")
+    dest = tmp_path / "out.bin"
+    run("drive", "download", "f1", "-o", str(dest))
+    url = ft.calls[0]["url"]
+    assert "alt=media" in url
+    assert "supportsAllDrives=true" in url
+    assert dest.read_bytes() == b"binary-bytes"
+    ft.add("GET", "files/f1/export", b"%PDF-fake")
+    doc = tmp_path / "doc.pdf"
+    run("drive", "export", "f1", "--mime", "application/pdf", "-o", str(doc))
+    url = ft.calls[-1]["url"]
+    assert "mimeType=application%2Fpdf" in url
+    assert "supportsAllDrives=true" in url
+    assert doc.read_bytes() == b"%PDF-fake"

@@ -15,12 +15,13 @@ Global flags `-a/--account <email|alias>` and `--json` go *before* the service n
 List a folder (default: root).
 
 ```text
-usage: gsuite drive ls [-h] [--max MAX] [folder]
+usage: gsuite drive ls [-h] [--drive DRIVE] [--max MAX] [folder]
 ```
 
 | Argument | Required | Default | Description |
 | --- | --- | --- | --- |
 | `folder` |  | `root` |  |
+| `--drive DRIVE` |  |  | scope to one shared drive by id |
 | `--max MAX` |  | `100` | maximum results (default: 100) |
 
 ### `gsuite drive search`
@@ -28,12 +29,13 @@ usage: gsuite drive ls [-h] [--max MAX] [folder]
 Search by name or raw Drive query.
 
 ```text
-usage: gsuite drive search [-h] [--max MAX] query
+usage: gsuite drive search [-h] [--drive DRIVE] [--max MAX] query
 ```
 
 | Argument | Required | Default | Description |
 | --- | --- | --- | --- |
 | `query` | yes |  |  |
+| `--drive DRIVE` |  |  | scope to one shared drive by id |
 | `--max MAX` |  | `50` | maximum results (default: 50) |
 
 ### `gsuite drive audit`
@@ -206,6 +208,18 @@ usage: gsuite drive copy [-h] [--name NAME] id
 | --- | --- | --- | --- |
 | `id` | yes |  |  |
 | `--name NAME` |  |  |  |
+
+### `gsuite drive drives`
+
+List shared drives.
+
+```text
+usage: gsuite drive drives [-h] [--max MAX]
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--max MAX` |  | `50` | maximum results (default: 50) |
 
 ## Examples
 
