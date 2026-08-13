@@ -15,8 +15,8 @@ class FakeTransport:
         self.calls = []
         self.routes = []
 
-    def add(self, method, url_part, body, status=200):
-        self.routes.append((method, url_part, status, body))
+    def add(self, method, url_part, body, status=200, headers=None):
+        self.routes.append((method, url_part, status, body, headers))
 
     def __call__(self, method, url, headers=None, data=None, timeout=30):
         self.calls.append(
@@ -25,11 +25,12 @@ class FakeTransport:
         # one-shot FIFO: each programmed route answers exactly one request,
         # so ordered sequences (e.g. 401 then 200) are expressible.
         for route in self.routes:
-            m, part, status, body = route
+            m, part, status, body, resp_headers = route
             if m == method and part in url:
                 self.routes.remove(route)
                 payload = body if isinstance(body, bytes) else json.dumps(body).encode()
-                return status, {"content-type": "application/json"}, payload
+                return (status, {"content-type": "application/json",
+                                 **(resp_headers or {})}, payload)
         raise AssertionError(f"unexpected request: {method} {url}")
 
 

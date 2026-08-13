@@ -1,13 +1,20 @@
-"""Authorized Google API client: JSON, params, pagination, 401 retry."""
+"""Authorized Google API client: JSON, params, pagination, 401 retry, backoff."""
 from __future__ import annotations
 
 import json
+import time
 import urllib.parse
 
 import gsuite.transport as transport_mod
 from gsuite import oauth
 from gsuite.config import ConfigStore
 from gsuite.errors import APIError
+
+# Seam for tests: monkeypatch gsuite.api._sleep to observe delays without waiting.
+_sleep = time.sleep
+
+RETRY_STATUSES = {429, 500, 502, 503, 504}
+MAX_RETRIES = 3
 
 
 def quote_id(value: str) -> str:
@@ -39,17 +46,24 @@ class Client:
             hdrs.setdefault("Content-Type", "application/json")
         hdrs["Authorization"] = f"Bearer {oauth.get_access_token(self.store, self.email)}"
 
-        status, _, body = transport_mod.request(method, url, headers=hdrs, data=data)
-        if status == 401:
-            # Access token revoked or expired early: force a refresh and retry once.
-            token = self.store.load_token(self.email) or {}
-            token["expiry"] = 0
-            self.store.save_token(self.email, token)
-            hdrs["Authorization"] = (
-                f"Bearer {oauth.get_access_token(self.store, self.email)}"
-            )
-            status, _, body = transport_mod.request(method, url, headers=hdrs,
-                                                    data=data)
+        for retry in range(MAX_RETRIES + 1):
+            status, resp_headers, body = transport_mod.request(method, url,
+                                                               headers=hdrs,
+                                                               data=data)
+            if status == 401:
+                # Access token revoked or expired early: force a refresh and
+                # retry once (does not count against the backoff budget).
+                token = self.store.load_token(self.email) or {}
+                token["expiry"] = 0
+                self.store.save_token(self.email, token)
+                hdrs["Authorization"] = (
+                    f"Bearer {oauth.get_access_token(self.store, self.email)}"
+                )
+                status, resp_headers, body = transport_mod.request(
+                    method, url, headers=hdrs, data=data)
+            if status not in RETRY_STATUSES or retry == MAX_RETRIES:
+                break
+            _sleep(_retry_delay(retry, resp_headers))
         if status >= 400:
             raise APIError(status, _error_message(body))
         if raw:
@@ -89,6 +103,17 @@ class Client:
             if not token:
                 return
             params["pageToken"] = token
+
+
+def _retry_delay(retry: int, headers: dict) -> int:
+    """Seconds to wait before retry N (0-based): Retry-After wins, else 1/2/4."""
+    for name, value in (headers or {}).items():
+        if name.lower() == "retry-after":
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                break
+    return 2 ** retry
 
 
 def _error_message(body: bytes) -> str:
