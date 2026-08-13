@@ -5,8 +5,10 @@ import argparse
 import importlib
 import sys
 
+import gsuite.transport
 from gsuite import __version__
 from gsuite.errors import CLIError
+from gsuite.output import check_flags
 
 # Service modules register their own subcommands. Appended to as the CLI
 # grows service by service (red-green, one increment per service).
@@ -36,6 +38,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--readonly", action="store_true",
         help="refuse any request that could modify data (only GET is allowed)",
     )
+    parser.add_argument(
+        "--csv", action="store_true",
+        help="CSV output with a header row (not with --json)",
+    )
+    parser.add_argument(
+        "--fields", metavar="A,B",
+        help="restrict output to these columns, in this order",
+    )
+    parser.add_argument(
+        "--debug", action="store_true",
+        help="trace HTTP requests and response statuses on stderr",
+    )
     subparsers = parser.add_subparsers(dest="command", metavar="<service>")
     for name in SERVICE_MODULES:
         module = importlib.import_module(f"gsuite.services.{name}")
@@ -50,7 +64,10 @@ def main(argv: list[str] | None = None) -> int:
     if func is None:
         parser.print_help(sys.stderr)
         return 2
+    if getattr(args, "debug", False):
+        gsuite.transport.DEBUG = True
     try:
+        check_flags(args)
         return func(args) or 0
     except CLIError as exc:
         print(f"error: {exc}", file=sys.stderr)
