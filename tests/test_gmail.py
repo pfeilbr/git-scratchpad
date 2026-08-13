@@ -149,3 +149,124 @@ def test_drafts_list_and_create(gmail):
         "--body", "b")
     payload, mime = sent_mime(ft)
     assert mime["To"] == "x@x.com"
+
+
+def full_msg(msg_id, headers, body_text):
+    return {"id": msg_id, "threadId": "t1",
+            "payload": {"mimeType": "text/plain",
+                        "headers": [{"name": k, "value": v}
+                                    for k, v in headers.items()],
+                        "body": {"data": b64u(body_text)}}}
+
+
+ATTACHMENT_MESSAGE = {
+    "id": "m1", "threadId": "t1",
+    "payload": {"mimeType": "multipart/mixed", "parts": [
+        {"mimeType": "text/plain", "filename": "", "body": {"data": "aGk"}},
+        {"mimeType": "image/png", "filename": "pic.png",
+         "body": {"attachmentId": "att1", "size": 6}},
+        {"mimeType": "multipart/alternative", "parts": [
+            {"mimeType": "application/pdf", "filename": "doc.pdf",
+             "body": {"attachmentId": "att2", "size": 8}},
+        ]},
+    ]},
+}
+
+
+def test_thread_renders_each_message_block(gmail):
+    ft, run = gmail
+    ft.add("GET", "threads/t1", {"id": "t1", "messages": [
+        full_msg("m1", {"From": "alice@x.com", "Subject": "Hello",
+                        "Date": "Mon, 1 Jan 2026 10:00:00 +0000"},
+                 "first message body"),
+        full_msg("m2", {"From": "bob@x.com", "Subject": "Re: Hello",
+                        "Date": "Tue, 2 Jan 2026 10:00:00 +0000"},
+                 "second message body"),
+    ]})
+    out = run("gmail", "thread", "t1")
+    assert "/threads/t1" in ft.calls[0]["url"]
+    assert "format=full" in ft.calls[0]["url"]
+    assert "from: alice@x.com" in out
+    assert "date: Mon, 1 Jan 2026 10:00:00 +0000" in out
+    assert "subject: Hello" in out
+    # blank line separates one message's body from the next message's headers
+    assert "first message body\n\nfrom: bob@x.com" in out
+    assert "second message body" in out
+
+
+def test_thread_json_prints_raw_thread(gmail):
+    ft, run = gmail
+    thread = {"id": "t1", "messages": [
+        full_msg("m1", {"From": "alice@x.com", "Subject": "Hello"}, "body one"),
+    ]}
+    ft.add("GET", "threads/t1", thread)
+    out = run("--json", "gmail", "thread", "t1")
+    assert json.loads(out) == thread
+
+
+def test_attachments_lists_filename_mime_size(gmail):
+    ft, run = gmail
+    ft.add("GET", "messages/m1", ATTACHMENT_MESSAGE)
+    out = run("gmail", "attachments", "m1")
+    assert "format=full" in ft.calls[0]["url"]
+    assert "FILENAME" in out and "MIME" in out and "SIZE" in out
+    assert "pic.png" in out and "image/png" in out and "6" in out
+    assert "doc.pdf" in out and "application/pdf" in out  # nested part found
+    assert "hi" not in out  # body part without attachmentId is not listed
+
+
+def test_attachments_download_writes_files(gmail, tmp_path):
+    ft, run = gmail
+    png = b"\x89PNG\r\n"
+    pdf = b"%PDF-1.4"
+    ft.add("GET", "messages/m1", ATTACHMENT_MESSAGE)
+    ft.add("GET", "attachments/att1",
+           {"data": base64.urlsafe_b64encode(png).decode().rstrip("="),
+            "size": len(png)})
+    ft.add("GET", "attachments/att2",
+           {"data": base64.urlsafe_b64encode(pdf).decode().rstrip("="),
+            "size": len(pdf)})
+    dest = tmp_path / "atts"
+    out = run("gmail", "attachments", "m1", "-o", str(dest))
+    assert "messages/m1/attachments/att1" in ft.calls[1]["url"]
+    assert (dest / "pic.png").read_bytes() == png
+    assert (dest / "doc.pdf").read_bytes() == pdf
+    assert f"wrote {len(png)} bytes to {dest / 'pic.png'}" in out
+    assert f"wrote {len(pdf)} bytes to {dest / 'doc.pdf'}" in out
+
+
+def test_send_with_attachments(gmail, tmp_path):
+    ft, run = gmail
+    report = tmp_path / "report.txt"
+    report.write_text("quarterly numbers")
+    blob = tmp_path / "data.bin"
+    blob.write_bytes(b"\x00\x01\x02")
+    ft.add("POST", "messages/send", {"id": "sent9"})
+    run("gmail", "send", "--to", "dst@x.com", "--subject", "files",
+        "--body", "see attached", "--attach", str(report),
+        "--attach", str(blob))
+    _, mime = sent_mime(ft)
+    assert mime.is_multipart()
+    body_part = next(p for p in mime.walk()
+                     if p.get_content_type() == "text/plain"
+                     and not p.get_filename())
+    assert "see attached" in body_part.get_payload()
+    atts = {p.get_filename(): p for p in mime.walk() if p.get_filename()}
+    assert atts["report.txt"].get_payload(decode=True) == b"quarterly numbers"
+    assert atts["report.txt"].get_content_type() == "text/plain"
+    assert atts["data.bin"].get_payload(decode=True) == b"\x00\x01\x02"
+    assert atts["data.bin"].get_content_type() == "application/octet-stream"
+
+
+def test_drafts_create_with_attachment(gmail, tmp_path):
+    ft, run = gmail
+    notes = tmp_path / "notes.txt"
+    notes.write_text("draft attachment")
+    ft.add("POST", "drafts", {"id": "d9"})
+    run("gmail", "drafts", "create", "--to", "x@x.com", "--subject", "s",
+        "--body", "b", "--attach", str(notes))
+    _, mime = sent_mime(ft)
+    names = [p.get_filename() for p in mime.walk() if p.get_filename()]
+    assert names == ["notes.txt"]
+    atts = {p.get_filename(): p for p in mime.walk() if p.get_filename()}
+    assert atts["notes.txt"].get_payload(decode=True) == b"draft attachment"

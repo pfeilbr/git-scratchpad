@@ -1,7 +1,11 @@
-"""`gsuite gmail` — search, read, send, reply, forward, labels, drafts, trash."""
+"""`gsuite gmail` — search, read, threads, attachments, send, reply,
+forward, labels, drafts, trash."""
 from __future__ import annotations
 
 import base64
+import json
+import mimetypes
+import os
 from email.message import EmailMessage
 
 from gsuite.api import Client
@@ -12,12 +16,18 @@ from gsuite.output import confirm, emit, emit_obj
 BASE = "https://gmail.googleapis.com/gmail/v1/users/me"
 
 COMPOSE_ARGS = (arg("--to", required=True), arg("--subject", default=""),
-                arg("--body", default=""), arg("--cc"), arg("--bcc"))
+                arg("--body", default=""), arg("--cc"), arg("--bcc"),
+                arg("--attach", action="append", metavar="FILE",
+                    help="attach a file (repeatable)"))
+
+
+def _b64u_bytes(data: str) -> bytes:
+    padded = data + "=" * (-len(data) % 4)
+    return base64.urlsafe_b64decode(padded)
 
 
 def _b64u_decode(data: str) -> str:
-    padded = data + "=" * (-len(data) % 4)
-    return base64.urlsafe_b64decode(padded).decode(errors="replace")
+    return _b64u_bytes(data).decode(errors="replace")
 
 
 def _headers(message: dict) -> dict:
@@ -38,7 +48,8 @@ def _plain_body(payload: dict) -> str:
 
 
 def _build_mime(to: str, subject: str, body: str, cc: str | None = None,
-                bcc: str | None = None, extra_headers: dict | None = None) -> str:
+                bcc: str | None = None, extra_headers: dict | None = None,
+                attachments: list[str] | None = None) -> str:
     msg = EmailMessage()
     msg["To"] = to
     if cc:
@@ -49,6 +60,12 @@ def _build_mime(to: str, subject: str, body: str, cc: str | None = None,
     for name, value in (extra_headers or {}).items():
         msg[name] = value
     msg.set_content(body)
+    for path in attachments or []:
+        ctype, _ = mimetypes.guess_type(path)
+        maintype, _, subtype = (ctype or "application/octet-stream").partition("/")
+        with open(path, "rb") as fh:
+            msg.add_attachment(fh.read(), maintype=maintype, subtype=subtype,
+                               filename=os.path.basename(path))
     return base64.urlsafe_b64encode(msg.as_bytes()).decode()
 
 
@@ -92,6 +109,56 @@ def cmd_get(args) -> int:
     return 0
 
 
+def cmd_thread(args) -> int:
+    client = Client.for_args(args)
+    thread = client.get(f"{BASE}/threads/{args.id}", params={"format": "full"})
+    if getattr(args, "json", False):
+        print(json.dumps(thread, indent=2, sort_keys=True))
+        return 0
+    blocks = []
+    for message in thread.get("messages", []):
+        headers = _headers(message)
+        blocks.append("\n".join([
+            f"from: {headers.get('from', '')}",
+            f"date: {headers.get('date', '')}",
+            f"subject: {headers.get('subject', '')}",
+            "",
+            _plain_body(message.get("payload", {})),
+        ]))
+    print("\n\n".join(blocks))
+    return 0
+
+
+def _attachment_parts(payload: dict):
+    """Depth-first walk yielding parts that are downloadable attachments."""
+    if payload.get("filename") and payload.get("body", {}).get("attachmentId"):
+        yield payload
+    for part in payload.get("parts", []):
+        yield from _attachment_parts(part)
+
+
+def cmd_attachments(args) -> int:
+    client = Client.for_args(args)
+    message = client.get(f"{BASE}/messages/{args.id}", params={"format": "full"})
+    parts = list(_attachment_parts(message.get("payload", {})))
+    if not args.output:
+        emit(args, [{"filename": p.get("filename", ""),
+                     "mime": p.get("mimeType", ""),
+                     "size": p.get("body", {}).get("size", "")} for p in parts],
+             [("FILENAME", "filename"), ("MIME", "mime"), ("SIZE", "size")])
+        return 0
+    os.makedirs(args.output, exist_ok=True)
+    for part in parts:
+        att_id = part["body"]["attachmentId"]
+        att = client.get(f"{BASE}/messages/{args.id}/attachments/{att_id}")
+        data = _b64u_bytes(att.get("data", ""))
+        path = os.path.join(args.output, os.path.basename(part["filename"]))
+        with open(path, "wb") as fh:
+            fh.write(data)
+        print(f"wrote {len(data)} bytes to {path}")
+    return 0
+
+
 def _send(client: Client, raw: str, thread_id: str | None = None) -> dict:
     body: dict = {"raw": raw}
     if thread_id:
@@ -102,7 +169,8 @@ def _send(client: Client, raw: str, thread_id: str | None = None) -> dict:
 
 
 def cmd_send(args) -> int:
-    raw = _build_mime(args.to, args.subject, args.body, cc=args.cc, bcc=args.bcc)
+    raw = _build_mime(args.to, args.subject, args.body, cc=args.cc,
+                      bcc=args.bcc, attachments=args.attach)
     _send(Client.for_args(args), raw)
     return 0
 
@@ -193,7 +261,8 @@ def cmd_drafts_list(args) -> int:
 
 
 def cmd_drafts_create(args) -> int:
-    raw = _build_mime(args.to, args.subject, args.body, cc=args.cc, bcc=args.bcc)
+    raw = _build_mime(args.to, args.subject, args.body, cc=args.cc,
+                      bcc=args.bcc, attachments=args.attach)
     draft = Client.for_args(args).post(f"{BASE}/drafts",
                                        json_body={"message": {"raw": raw}})
     confirm("draft", draft.get("id"))
@@ -205,6 +274,12 @@ def register(subparsers) -> None:
         Cmd("search", cmd_search, "search messages (Gmail query syntax)",
             (arg("query"), max_flag(20))),
         Cmd("get", cmd_get, "read a message (plain-text body)", (arg("id"),)),
+        Cmd("thread", cmd_thread, "read a whole thread (every message)",
+            (arg("id"),)),
+        Cmd("attachments", cmd_attachments, "list or download attachments",
+            (arg("id"),
+             arg("-o", "--output", metavar="DIR",
+                 help="download attachments into this directory"))),
         Cmd("send", cmd_send, "send an email", COMPOSE_ARGS),
         Cmd("reply", cmd_reply, "reply on the original thread",
             (arg("id"), arg("--body", required=True))),

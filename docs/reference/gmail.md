@@ -35,13 +35,38 @@ usage: gsuite gmail get [-h] id
 | --- | --- | --- | --- |
 | `id` | yes |  |  |
 
+### `gsuite gmail thread`
+
+Read a whole thread (every message).
+
+```text
+usage: gsuite gmail thread [-h] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+
+### `gsuite gmail attachments`
+
+List or download attachments.
+
+```text
+usage: gsuite gmail attachments [-h] [-o DIR] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+| `-o DIR, --output DIR` |  |  | download attachments into this directory |
+
 ### `gsuite gmail send`
 
 Send an email.
 
 ```text
 usage: gsuite gmail send [-h] --to TO [--subject SUBJECT] [--body BODY]
-                         [--cc CC] [--bcc BCC]
+                         [--cc CC] [--bcc BCC] [--attach FILE]
 ```
 
 | Argument | Required | Default | Description |
@@ -51,6 +76,7 @@ usage: gsuite gmail send [-h] --to TO [--subject SUBJECT] [--body BODY]
 | `--body BODY` |  |  |  |
 | `--cc CC` |  |  |  |
 | `--bcc BCC` |  |  |  |
+| `--attach FILE` |  |  | attach a file (repeatable) |
 
 ### `gsuite gmail reply`
 
@@ -148,6 +174,7 @@ usage: gsuite gmail drafts list [-h]
 ```text
 usage: gsuite gmail drafts create [-h] --to TO [--subject SUBJECT]
                                   [--body BODY] [--cc CC] [--bcc BCC]
+                                  [--attach FILE]
 ```
 
 | Argument | Required | Default | Description |
@@ -157,6 +184,7 @@ usage: gsuite gmail drafts create [-h] --to TO [--subject SUBJECT]
 | `--body BODY` |  |  |  |
 | `--cc CC` |  |  |  |
 | `--bcc BCC` |  |  |  |
+| `--attach FILE` |  |  | attach a file (repeatable) |
 
 ## Examples
 
