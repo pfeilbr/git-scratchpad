@@ -14,7 +14,7 @@ flowchart TD
         direction LR
         GM[gmail] --- CA[calendar] --- DR[drive] --- DO[docs] --- SH[sheets]
         SL[slides] --- CO[contacts] --- TA[tasks] --- CH[chat] --- KE[keep]
-        AD[admin] --- AP[api]
+        AD[admin] --- FO[forms] --- ME[meet] --- AP[api] --- CP[completion]
     end
 
     CLI --> SVC
@@ -22,7 +22,7 @@ flowchart TD
     SVC --> COMMON["services/_common.py<br/>emit_paged()"]
     SVC --> OUT["output.py<br/>emit / emit_obj / confirm<br/>tables or --json"]
     COMMON --> CLIENT
-    SVC --> CLIENT["api.py — Client<br/>params · JSON · pagination · 401 retry"]
+    SVC --> CLIENT["api.py — Client<br/>params · JSON · pagination<br/>401 retry · backoff · --readonly"]
     CLIENT --> OAUTH["oauth.py<br/>scopes · loopback flow · refresh"]
     OAUTH --> CFG["config.py — ConfigStore<br/>accounts · aliases · 0600 tokens"]
     CLIENT --> T["transport.py — request()<br/>the single HTTP seam"]
@@ -112,11 +112,12 @@ sequenceDiagram
 | `gsuite/cmdreg.py` | declarative `Cmd`/`Group`/`arg` → argparse tree |
 | `gsuite/config.py` | `~/.config/gsuite`: accounts, aliases, tokens, client |
 | `gsuite/oauth.py` | scope registry, loopback flow, code exchange, refresh |
-| `gsuite/api.py` | `Client`: auth header, JSON, pagination, 401 retry |
+| `gsuite/api.py` | `Client`: auth header, JSON, pagination, 401 retry, 429/5xx backoff, `--readonly` guard |
 | `gsuite/transport.py` | `request()` — the only code that opens a socket |
 | `gsuite/output.py` | `emit` (tables/JSON), `emit_obj`, `confirm` |
 | `gsuite/services/_common.py` | `emit_paged()` — the list-command idiom |
 | `gsuite/services/<name>.py` | one per service: handlers + command table |
+| `gsuite/services/completion.py` | shell completion emitted from the parser tree |
 | `gsuite/errors.py` | `CLIError` → exit 1; `AuthError`, `APIError` subclasses |
 
 ## On-disk state

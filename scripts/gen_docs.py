@@ -23,6 +23,11 @@ from gsuite.cli import SERVICE_MODULES, build_parser  # noqa: E402
 
 REFERENCE_DIR = os.path.join(ROOT, "docs", "reference")
 
+# The README's command table is generated between these markers, so it can
+# never fall behind the parser tree the way a hand-written list does.
+README_BEGIN = "<!-- BEGIN GENERATED COMMAND SUMMARY -->"
+README_END = "<!-- END GENERATED COMMAND SUMMARY -->"
+
 # (title, command, sample output) triples rendered under "## Examples".
 EXAMPLES: dict[str, list[tuple[str, str, str]]] = {
     "auth": [
@@ -265,6 +270,45 @@ def render_index(service_helps: dict[str, str]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _command_summary(parser) -> str:
+    """`a` · `b` · `group x|y` — one service's commands, registration order."""
+    sub = _sub_action(parser)
+    parts = []
+    for name, child in sub.choices.items():
+        nested = _sub_action(child)
+        if nested is None:
+            parts.append(f"`{name}`")
+        else:
+            parts.append(f"`{name} {'|'.join(nested.choices)}`")
+    return " · ".join(parts)
+
+
+def render_readme_summary() -> str:
+    """The README's generated command table (body between the markers)."""
+    root = build_parser()
+    sub = _sub_action(root)
+    helps = {ca.dest: ca.help or "" for ca in sub._choices_actions}
+    lines = ["", "| Service | Commands |", "| --- | --- |"]
+    for name in SERVICE_MODULES:
+        lines.append(f"| [`gsuite {name}`](docs/reference/{name}.md)"
+                     f"<br/><sub>{helps[name]}</sub> "
+                     f"| {_command_summary(sub.choices[name])} |")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _readme_page() -> tuple[str, str]:
+    """(path, README content with the generated block refreshed)."""
+    path = os.path.join(ROOT, "README.md")
+    current = open(path).read()
+    if README_BEGIN not in current or README_END not in current:
+        raise SystemExit(f"gen_docs: {path} is missing the "
+                         f"{README_BEGIN} / {README_END} markers")
+    head = current.split(README_BEGIN)[0]
+    tail = current.split(README_END)[1]
+    return path, head + README_BEGIN + render_readme_summary() + README_END + tail
+
+
 def build_pages() -> dict[str, str]:
     missing = [s for s in SERVICE_MODULES if not EXAMPLES.get(s)]
     if missing:
@@ -276,6 +320,8 @@ def build_pages() -> dict[str, str]:
     for name in SERVICE_MODULES:
         pages[os.path.join(REFERENCE_DIR, f"{name}.md")] = render_service(
             name, sub.choices[name], helps[name])
+    path, content = _readme_page()
+    pages[path] = content
     return pages
 
 
@@ -295,10 +341,10 @@ def main() -> int:
                 with open(path, "w") as fh:
                     fh.write(content)
     if check and stale:
-        print("stale reference docs (run scripts/gen_docs.py):")
+        print("stale generated docs (run scripts/gen_docs.py):")
         print("\n".join(f"  {p}" for p in stale))
         return 1
-    print(f"reference docs: {len(pages)} pages "
+    print(f"generated docs: {len(pages)} files "
           f"({'in sync' if not stale else f'{len(stale)} rewritten'})")
     return 0
 

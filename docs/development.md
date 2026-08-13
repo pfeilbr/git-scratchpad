@@ -10,14 +10,15 @@ One deterministic script runs everything, with terse stable output:
 
 ```console
 $ python3 scripts/verify.py
-GREEN: 153 passed in 2.1s
+GREEN: 254 passed in 6.3s
 
 $ python3 scripts/verify.py --red     # run BEFORE implementing
-RED OK: 8 failed, 144 passed in 1.6s
+RED OK: 4 failed, 250 passed in 6.4s
 ```
 
-The gate is: byte-compile all sources → full test suite → reference-docs
-sync check (`scripts/gen_docs.py --check`). `--red` inverts the exit code:
+The gate is: byte-compile all sources → full test suite → generated-docs
+sync check (`scripts/gen_docs.py --check`, covering both `docs/reference/`
+and the README's command table). `--red` inverts the exit code:
 it succeeds only if the suite *fails*, proving that freshly written tests
 actually test something. The loop for every change:
 
@@ -96,8 +97,9 @@ docs/
 ```
 
 - `python3 scripts/gen_docs.py` regenerates `docs/reference/` from the live
-  argparse tree — usage lines, option tables, and curated examples.
-  Never edit those pages by hand.
+  argparse tree — usage lines, option tables, and curated examples — plus the
+  README's command table (between its `GENERATED COMMAND SUMMARY` markers).
+  Never edit those by hand; the gate fails when they drift.
 - Preview the site with `pip install mkdocs-material && mkdocs serve`.
   GitHub also renders every page (including mermaid) directly.
 

@@ -1,8 +1,9 @@
 # gsuite-cli
 
 One command-line tool for all of Google Workspace — Gmail, Calendar, Drive,
-Docs, Sheets, Slides, Contacts, Tasks, Chat, Keep, and Workspace Admin —
-plus a raw passthrough to **any** Google API via the Discovery service.
+Docs, Sheets, Slides, Contacts, Tasks, Chat, Keep, Forms, Meet, and Workspace
+Admin — plus a raw passthrough to **any** Google API via the Discovery
+service, and shell completion for the whole surface.
 
 It combines the command surfaces of two existing tools:
 
@@ -57,81 +58,50 @@ on GitHub):
 ## Commands
 
 Global flags (before the service name): `-a/--account <email|alias>`,
-`--json` for machine-readable output, `--readonly` to refuse any request
-that could modify data. The summary below is the short
-version; see the [command reference](docs/reference/index.md) for options
-tables and worked examples.
+`--json` for machine-readable output, and `--readonly` to refuse any request
+that could modify data. The table below is generated from the CLI's own
+parser tree — see the [command reference](docs/reference/index.md) for
+options tables and worked examples.
 
-### `gsuite auth`
-`login [email] [--services a,b]` · `logout <email>` · `list` · `status` ·
-`switch <email>` · `alias set|rm|list` · `credentials set <file>` ·
-`token` (print a fresh access token for scripts) · `doctor`
+<!-- BEGIN GENERATED COMMAND SUMMARY -->
+| Service | Commands |
+| --- | --- |
+| [`gsuite auth`](docs/reference/auth.md)<br/><sub>login, accounts, aliases, tokens</sub> | `login` · `logout` · `list` · `status` · `switch` · `alias set|rm|list` · `credentials set` · `token` · `doctor` |
+| [`gsuite gmail`](docs/reference/gmail.md)<br/><sub>search, read, send, labels, drafts</sub> | `search` · `get` · `thread` · `attachments` · `send` · `reply` · `forward` · `trash` · `labels list|create|apply|remove` · `drafts list|create` · `vacation show|set|off` · `signature show|set` · `filters list|create|rm` · `batch-modify` |
+| [`gsuite calendar`](docs/reference/calendar.md)<br/><sub>calendars, events, agenda</sub> | `calendars` · `events` · `agenda` · `create` · `get` · `update` · `respond` · `freebusy` · `delete` |
+| [`gsuite drive`](docs/reference/drive.md)<br/><sub>files: ls, search, upload, share</sub> | `ls` · `search` · `audit` · `info` · `mv` · `mkdir` · `upload` · `download` · `export` · `share` · `permissions` · `trash` · `restore` · `rm` · `copy` |
+| [`gsuite docs`](docs/reference/docs.md)<br/><sub>Google Docs: create, cat, append, replace</sub> | `create` · `cat` · `append` · `replace` |
+| [`gsuite sheets`](docs/reference/sheets.md)<br/><sub>spreadsheets: read/append/update</sub> | `create` · `read` · `append` · `update` · `clear` · `tabs` · `add-tab` · `rm-tab` |
+| [`gsuite slides`](docs/reference/slides.md)<br/><sub>presentations: create, info, cat, add</sub> | `create` · `info` · `cat` · `add` |
+| [`gsuite contacts`](docs/reference/contacts.md)<br/><sub>list, search, create contacts</sub> | `list` · `search` · `get` · `create` · `update` · `rm` · `groups list|create|add` |
+| [`gsuite tasks`](docs/reference/tasks.md)<br/><sub>task lists and tasks</sub> | `lists` · `list` · `add` · `update` · `move` · `done` · `rm` · `clear-completed` |
+| [`gsuite chat`](docs/reference/chat.md)<br/><sub>Google Chat spaces and messages</sub> | `spaces` · `create-space` · `members` · `add-member` · `messages` · `send` · `reply` |
+| [`gsuite keep`](docs/reference/keep.md)<br/><sub>Google Keep notes</sub> | `list` · `get` · `create` · `rm` · `share` · `unshare` |
+| [`gsuite admin`](docs/reference/admin.md)<br/><sub>Workspace admin: users, groups</sub> | `users list|info|create|update|reset-password|suspend|unsuspend|delete` · `groups list|create|members|add-member|rm-member|delete` · `orgunits` |
+| [`gsuite forms`](docs/reference/forms.md)<br/><sub>Google Forms: create, inspect, responses</sub> | `create` · `get` · `questions` · `responses` |
+| [`gsuite meet`](docs/reference/meet.md)<br/><sub>Google Meet spaces and conferences</sub> | `create` · `get` · `end` · `conferences` · `participants` |
+| [`gsuite api`](docs/reference/api.md)<br/><sub>raw calls to any Google API</sub> | `call` · `describe` · `list` |
+| [`gsuite completion`](docs/reference/completion.md)<br/><sub>shell tab-completion (generated from the parser tree)</sub> | `bash` · `zsh` |
+<!-- END GENERATED COMMAND SUMMARY -->
 
-### `gsuite gmail`
-`search <query> [--max N]` · `get <id>` · `send --to --subject --body [--cc --bcc]` ·
-`reply <id> --body` · `forward <id> --to` · `trash <id>` ·
-`labels list|create|apply|remove` · `drafts list|create`
+### Notes
 
-### `gsuite calendar`
-`calendars` · `events [--from --to --max --calendar]` · `agenda [--date]` ·
-`create --summary --start [--end --attendees --location --description]` ·
-`get <id>` · `delete <id>`
+- **`gsuite api`** is the escape hatch: every Google API method is reachable
+  even without a hand-crafted command.
 
-### `gsuite drive`
-`ls [folder]` · `search <query>` · `upload <file> [--parent --name --mime]` ·
-`download <id> [-o]` · `export <id> --mime [-o]` · `mkdir <name> [--parent]` ·
-`share <id> --with <email|anyone> [--role]` · `permissions <id>` ·
-`copy <id> [--name]` · `rm <id>` · `audit` (find link-/publicly-shared files)
+  ```sh
+  gsuite api list                          # all Google APIs (Discovery directory)
+  gsuite api describe gmail                # every method of an API
+  gsuite api call GET drive/v3/about --param fields=user
+  gsuite api call POST https://forms.googleapis.com/v1/forms --body @form.json
+  ```
 
-### `gsuite docs`
-`create --title` · `cat <id>` · `append <id> --text`
-
-### `gsuite sheets`
-`create --title` · `read <id> <range>` · `append <id> <range> --values "a,b;c,d"` ·
-`update <id> <range> --values` · `clear <id> <range>`
-
-### `gsuite slides`
-`create --title` · `info <id>`
-
-### `gsuite contacts`
-`list [--max]` · `search <query>` · `create --name [--email --phone]` · `rm <resource>`
-
-### `gsuite tasks`
-`lists` · `list [--list --all --max]` · `add <title> [--due --notes]` ·
-`done <id>` · `rm <id>`
-
-### `gsuite chat`
-`spaces` · `messages <space> [--max]` · `send <space> --text`
-
-### `gsuite keep`
-`list` · `get <id>` · `create [--title] --text`
-(Note: the Keep API is only available to Google Workspace enterprise accounts.)
-
-### `gsuite admin`
-`users list|info|create|suspend|unsuspend|delete` ·
-`groups list|create|members|add-member`
-(Requires a Workspace admin account with the `admin` service authorized.)
-
-### `gsuite forms`
-`create --title` · `get <id>` · `questions <id>` · `responses <id> [--max]`
-
-### `gsuite meet`
-`create [--access]` · `get <space>` · `end <space>` · `conferences [--max]` ·
-`participants <record> [--max]`
-
-### `gsuite api`
-The escape hatch — every Google API method is reachable even without a
-hand-crafted command:
-
-```sh
-gsuite api list                          # all Google APIs (Discovery directory)
-gsuite api describe gmail                # every method of an API
-gsuite api call GET drive/v3/about --param fields=user
-gsuite api call POST https://forms.googleapis.com/v1/forms --body '{"info":{"title":"F"}}'
-```
-
-### `gsuite completion`
-`bash` · `zsh` — tab completion generated from the parser tree; enable with `source <(gsuite completion bash)`
+- **`gsuite completion`** emits tab completion built from the same parser
+  tree: `source <(gsuite completion bash)` (or `zsh`).
+- **`gsuite keep`** requires a Google Workspace enterprise account — the Keep
+  API is not available to consumer accounts.
+- **`gsuite admin`** requires a Workspace admin account with the `admin`
+  service authorized at login.
 
 ## Development
 
@@ -153,7 +123,12 @@ Tests never touch the network: all HTTP funnels through
 - **One HTTP seam** — `transport.request()` is the single network chokepoint:
   easy to fake, easy to audit.
 - **401 self-healing** — API calls force a token refresh and retry once.
+- **Transient-error backoff** — 429/5xx retried at 1/2/4s, honoring `Retry-After`.
 - **Pagination everywhere** — `Client.paged()` follows `nextPageToken`.
+- **`--readonly` guard** — enforced at the single client chokepoint, so a
+  non-GET is refused before any token or network work happens.
+- **Docs can't drift** — the command reference *and* the README table are
+  generated from the parser tree; `verify.py` fails if either goes stale.
 - Not yet covered from the upstream tools: gog's analytics/searchconsole/
   youtube/zoom integrations and gws's AI "+workflow" helpers; `gsuite api call`
   reaches those APIs in the meantime.

@@ -64,3 +64,69 @@ def test_verify_gate_includes_docs_sync():
 
 def test_readme_links_documentation():
     assert "docs/" in _read("README.md")
+
+
+# -- the hand-written docs must not drift either -----------------------------
+
+README_BEGIN = "<!-- BEGIN GENERATED COMMAND SUMMARY -->"
+README_END = "<!-- END GENERATED COMMAND SUMMARY -->"
+
+
+def _readme_generated_block():
+    readme = _read("README.md")
+    assert README_BEGIN in readme and README_END in readme, \
+        "README command summary is not a generated block"
+    return readme.split(README_BEGIN)[1].split(README_END)[0]
+
+
+def _command_paths():
+    """Every leaf command as (service, path-words) from the live parser."""
+    import argparse
+
+    from gsuite.cli import build_parser
+
+    def sub(parser):
+        return next((a for a in parser._actions
+                     if isinstance(a, argparse._SubParsersAction)), None)
+
+    paths = []
+    root = sub(build_parser())
+    for service, sp in root.choices.items():
+        level = sub(sp)
+        for name, cp in level.choices.items():
+            nested = sub(cp)
+            if nested is None:
+                paths.append((service, [name]))
+            else:
+                for leaf in nested.choices:
+                    paths.append((service, [name, leaf]))
+    return paths
+
+
+def test_readme_summary_lists_every_service_and_command():
+    block = _readme_generated_block()
+    for service, path in _command_paths():
+        assert f"`gsuite {service}`" in block or f"gsuite {service}" in block, \
+            f"README summary missing service: {service}"
+        for word in path:
+            assert word in block, \
+                f"README summary missing: gsuite {service} {' '.join(path)}"
+
+
+def test_readme_summary_matches_the_generator():
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    import gen_docs
+
+    assert gen_docs.render_readme_summary() == _readme_generated_block()
+
+
+def test_architecture_diagram_covers_every_service():
+    page = _read("docs/architecture.md")
+    for service in SERVICE_MODULES:
+        assert service in page, f"architecture page never mentions: {service}"
+
+
+def test_index_page_mentions_every_service():
+    page = _read("docs/index.md")
+    for service in SERVICE_MODULES:
+        assert service in page, f"docs/index.md never mentions: {service}"

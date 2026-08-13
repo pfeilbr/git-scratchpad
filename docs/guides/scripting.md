@@ -21,6 +21,20 @@ gsuite --json calendar agenda \
   | jq -r '.[].attendees[]?.email' | sort -u
 ```
 
+## Read-only runs
+
+`--readonly` (before the service name) refuses anything that could modify
+data — the check sits at the single client chokepoint, so a non-GET never
+reaches the network:
+
+```console
+$ gsuite --readonly drive rm 1XyZ9
+error: readonly mode: refusing DELETE https://www.googleapis.com/drive/v3/files/1XyZ9
+```
+
+Wrap audit scripts and cron jobs in it: a mistaken verb fails loudly with
+exit 1 instead of deleting something.
+
 ## Exit codes
 
 | Code | Meaning |
