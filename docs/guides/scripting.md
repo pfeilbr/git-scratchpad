@@ -21,6 +21,62 @@ gsuite --json calendar agenda \
   | jq -r '.[].attendees[]?.email' | sort -u
 ```
 
+## Picking columns with `--fields`
+
+`--fields` narrows any listing to the columns you name, in the order you
+name them. Names match the table headers case-insensitively:
+
+```console
+$ gsuite --fields name,id gmail labels list
+NAME    ID
+INBOX   L1
+todo    L2
+```
+
+An unknown name fails with exit 1 and lists what that command does offer:
+
+```console
+$ gsuite --fields nope gmail labels list
+error: unknown field: nope (valid fields: ID, NAME, TYPE)
+```
+
+It composes with `--json`, where each row shrinks to the same columns keyed
+by the lowercased header:
+
+```sh
+gsuite --json --fields id,name gmail labels list | jq -r '.[] | .id'
+```
+
+## CSV for spreadsheets
+
+`--csv` emits RFC 4180 CSV with a header row instead of the aligned table —
+values containing commas or quotes are quoted for you:
+
+```console
+$ gsuite --csv --fields name,type gmail labels list
+NAME,TYPE
+INBOX,system
+todo,user
+```
+
+`--csv` and `--json` are two different shapes for the same data, so asking
+for both is an error (`--json and --csv are mutually exclusive`, exit 1).
+
+## Tracing HTTP with `--debug`
+
+`--debug` traces every API call at the single transport chokepoint, one line
+out and one line back, on **stderr** — so it never pollutes a `--json` or
+`--csv` pipeline:
+
+```console
+$ gsuite --debug --json gmail labels list > labels.json
+→ GET https://gmail.googleapis.com/gmail/v1/users/me/labels
+← 200 431 bytes
+```
+
+The trace is metadata only: no request or response bodies, and no headers
+(your bearer token lives in one), so `2> trace.log` is safe to keep.
+
 ## Read-only runs
 
 `--readonly` (before the service name) refuses anything that could modify
