@@ -23,18 +23,32 @@ def quote_id(value: str) -> str:
 
 
 class Client:
-    def __init__(self, store: ConfigStore, email: str, readonly: bool = False):
+    def __init__(self, store: ConfigStore, email, readonly: bool = False):
         self.store = store
-        self.email = email
+        self._email = email  # a string, or a callable resolved on first use
         self.readonly = readonly
+
+    @property
+    def email(self) -> str:
+        """The acting account, resolved lazily.
+
+        Resolution can fail ("no accounts configured"), so it must not happen
+        until a request actually needs credentials — otherwise `--readonly`
+        would report a missing account instead of refusing the mutation it
+        was asked to guard against.
+        """
+        if callable(self._email):
+            self._email = self._email()
+        return self._email
 
     @classmethod
     def for_args(cls, args) -> "Client":
         store = ConfigStore()
+        account = getattr(args, "account", None)
         # A caller who supplies $GSUITE_ACCESS_TOKEN needs no configured
         # account at all, so account resolution is skipped entirely.
-        email = ("" if oauth.env_access_token()
-                 else store.resolve(getattr(args, "account", None)))
+        email = "" if oauth.env_access_token() else (
+            lambda: store.resolve(account))
         return cls(store, email, readonly=getattr(args, "readonly", False))
 
     # -- core ----------------------------------------------------------------

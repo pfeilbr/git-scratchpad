@@ -34,6 +34,31 @@ flowchart LR
 CI (`.github/workflows/ci.yml`) runs this exact script — not a parallel
 test configuration — on every push, across Python 3.10–3.13.
 
+## Two gates, two kinds of confidence
+
+`verify.py` is the fast one and covers almost everything. But every test it
+runs drives `main()` in-process with the transport faked, which is blind to
+whatever only breaks in a real process — packaging, entry points, pipe
+behavior, the assembled request path. So there is a second script:
+
+```console
+$ python3 scripts/smoke.py
+SMOKE OK: 31 checks passed
+```
+
+It installs the project into a throwaway virtualenv and drives the real
+`gsuite` console script: every service's help, exit codes, closed-pipe
+behavior, `bash -n` on the emitted completion script, and — via a loopback
+HTTP server and `api call`'s full-URL form — genuine request round-trips.
+Still no network: `HOME`, `GSUITE_CONFIG_DIR` and the ADC path are all
+sandboxed so your own credentials cannot influence the result. CI runs it as
+a second job.
+
+`tests/test_integration.py` covers the same request path inside the fast
+gate, running the CLI as a subprocess against a loopback server. That is
+where the bearer header, real HTTP errors, 429 retry, `--debug` tracing and
+the `--readonly` guard are pinned against actual sockets.
+
 ## Tests never touch the network
 
 All HTTP funnels through `gsuite/transport.py:request()`. The

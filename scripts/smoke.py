@@ -20,11 +20,15 @@ exit 0 only if every check passed.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import http.server
+import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TAIL = 20  # diagnostic lines shown for a failing check
@@ -72,6 +76,36 @@ class Smoke:
             ok = ok and expect_in_output in blob
         return self.check(label, ok,
                           f"exit={result.returncode}\n{blob}" if not ok else "")
+
+
+@contextlib.contextmanager
+def local_api():
+    """A loopback stand-in for a Google API: JSON bodies, Google-shaped errors."""
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def _respond(self):
+            if self.path.split("?")[0] == "/notfound":
+                code, payload = 404, {"error": {"message": "nope", "code": 404}}
+            else:
+                code, payload = 200, {"auth": self.headers.get("Authorization"),
+                                      "method": self.command}
+            body = json.dumps(payload).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        do_GET = do_POST = _respond
+
+        def log_message(self, *args):
+            pass
+
+    httpd = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{httpd.server_port}"
+    finally:
+        httpd.shutdown()
 
 
 def build_venv(workdir: str) -> str:
@@ -146,6 +180,22 @@ def main() -> int:
                                     capture_output=True)
             s.check("completion bash passes `bash -n`", syntax.returncode == 0,
                     syntax.stderr)
+
+        # A real request through the installed binary: `api call` takes a
+        # full URL, so a loopback server exercises parser → Client → oauth →
+        # transport → HTTP → output without touching the network.
+        with local_api() as base:
+            s.env["GSUITE_ACCESS_TOKEN"] = "smoke-token"
+            s.env["NO_PROXY"] = s.env["no_proxy"] = "127.0.0.1,localhost"
+            s.expect_clean("real GET round-trip", f"api call GET {base}/about",
+                           expect_in_output="Bearer smoke-token")
+            s.expect_clean("real 404 -> clean error",
+                           f"api call GET {base}/notfound", code=1,
+                           expect_in_output="HTTP 404")
+            s.expect_clean("readonly refuses a real POST",
+                           f"--readonly api call POST {base}/about --body {{}}",
+                           code=1, expect_in_output="readonly mode: refusing")
+            del s.env["GSUITE_ACCESS_TOKEN"]
 
         if s.failures:
             print(f"SMOKE FAIL: {len(s.failures)}/{s.checks} checks failed")
