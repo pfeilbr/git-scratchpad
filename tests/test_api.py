@@ -3,7 +3,7 @@ import json
 import pytest
 
 from gsuite.api import Client
-from gsuite.errors import APIError
+from gsuite.errors import APIError, CLIError
 from gsuite.output import emit
 
 
@@ -132,6 +132,32 @@ def test_401_refresh_flow_does_not_sleep(client, sleeps):
     assert c.get("https://example.googleapis.com/v1/x") == {"ok": True}
     assert ft.calls[-1]["headers"]["Authorization"] == "Bearer tok2"
     assert sleeps == []
+
+
+# -- readonly mode -----------------------------------------------------------
+
+@pytest.mark.parametrize("method", ["POST", "PATCH", "DELETE"])
+def test_readonly_refuses_writes_before_any_io(authed, fake_transport, method):
+    c = Client(authed, "a@x.com", readonly=True)
+    # Expire the token: any token refresh attempt would hit the transport,
+    # so ft.calls == [] proves the guard runs before token work too.
+    token = authed.load_token("a@x.com")
+    token["expiry"] = 0
+    authed.save_token("a@x.com", token)
+    with pytest.raises(CLIError, match="readonly mode"):
+        c.request(method, "https://example.googleapis.com/v1/x")
+    assert fake_transport.calls == []
+
+
+def test_readonly_get_still_works(authed, fake_transport):
+    c = Client(authed, "a@x.com", readonly=True)
+    fake_transport.add("GET", "/v1/things", {"kind": "thing"})
+    assert c.get("https://example.googleapis.com/v1/things") == {"kind": "thing"}
+
+
+def test_cli_readonly_blocks_gmail_trash(authed, fake_transport, run_cli):
+    run_cli("--readonly", "gmail", "trash", "m1", expect=1)
+    assert fake_transport.calls == []
 
 
 # -- output ------------------------------------------------------------------

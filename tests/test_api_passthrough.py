@@ -1,3 +1,4 @@
+import io
 import json
 
 import pytest
@@ -29,6 +30,31 @@ def test_api_call_full_url_and_body(svc):
 def test_api_call_bad_body_json_errors(svc):
     ft, run = svc
     run("api", "call", "POST", "x/y", "--body", "{not json", expect=1)
+
+
+def test_api_call_body_from_file(svc, tmp_path):
+    ft, run = svc
+    body_file = tmp_path / "body.json"
+    body_file.write_text('{"name": "from-file"}')
+    ft.add("POST", "example.googleapis.com/v1/things", {"id": "t1"})
+    run("api", "call", "POST", "https://example.googleapis.com/v1/things",
+        "--body", f"@{body_file}")
+    assert json.loads(ft.calls[0]["data"]) == {"name": "from-file"}
+
+
+def test_api_call_body_from_stdin(svc, monkeypatch):
+    ft, run = svc
+    monkeypatch.setattr("sys.stdin", io.StringIO('{"name": "from-stdin"}'))
+    ft.add("POST", "example.googleapis.com/v1/things", {"id": "t1"})
+    run("api", "call", "POST", "https://example.googleapis.com/v1/things",
+        "--body", "-")
+    assert json.loads(ft.calls[0]["data"]) == {"name": "from-stdin"}
+
+
+def test_api_call_body_missing_file_errors(svc, tmp_path):
+    ft, run = svc
+    run("api", "call", "POST", "x/y", "--body", f"@{tmp_path}/missing.json",
+        expect=1)
 
 
 def test_api_describe_flattens_methods(svc):

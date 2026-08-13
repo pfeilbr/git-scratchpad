@@ -8,7 +8,7 @@ import urllib.parse
 import gsuite.transport as transport_mod
 from gsuite import oauth
 from gsuite.config import ConfigStore
-from gsuite.errors import APIError
+from gsuite.errors import APIError, CLIError
 
 # Seam for tests: monkeypatch gsuite.api._sleep to observe delays without waiting.
 _sleep = time.sleep
@@ -23,20 +23,24 @@ def quote_id(value: str) -> str:
 
 
 class Client:
-    def __init__(self, store: ConfigStore, email: str):
+    def __init__(self, store: ConfigStore, email: str, readonly: bool = False):
         self.store = store
         self.email = email
+        self.readonly = readonly
 
     @classmethod
     def for_args(cls, args) -> "Client":
         store = ConfigStore()
-        return cls(store, store.resolve(getattr(args, "account", None)))
+        return cls(store, store.resolve(getattr(args, "account", None)),
+                   readonly=getattr(args, "readonly", False))
 
     # -- core ----------------------------------------------------------------
 
     def request(self, method: str, url: str, params: dict | None = None,
                 json_body=None, data: bytes | None = None,
                 headers: dict | None = None, raw: bool = False):
+        if self.readonly and method.upper() != "GET":
+            raise CLIError(f"readonly mode: refusing {method} {url}")
         if params:
             sep = "&" if "?" in url else "?"
             url = f"{url}{sep}{urllib.parse.urlencode(params, doseq=True)}"

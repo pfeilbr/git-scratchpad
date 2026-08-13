@@ -30,6 +30,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--json", action="store_true", help="machine-readable JSON output"
     )
+    parser.add_argument(
+        "--readonly", action="store_true",
+        help="refuse any request that could modify data (only GET is allowed)",
+    )
     subparsers = parser.add_subparsers(dest="command", metavar="<service>")
     for name in SERVICE_MODULES:
         module = importlib.import_module(f"gsuite.services.{name}")

@@ -6,6 +6,7 @@ even when gsuite has no hand-crafted command for it.
 from __future__ import annotations
 
 import json
+import sys
 
 from gsuite.api import Client
 from gsuite.cmdreg import Cmd, arg, register_service
@@ -27,8 +28,17 @@ def cmd_call(args) -> int:
         params[key] = value
     body = None
     if args.body is not None:
+        text = args.body
+        if text == "-":
+            text = sys.stdin.read()
+        elif text.startswith("@"):
+            try:
+                with open(text[1:], encoding="utf-8") as fh:
+                    text = fh.read()
+            except OSError as exc:
+                raise CLIError(f"cannot read --body file: {exc}") from exc
         try:
-            body = json.loads(args.body)
+            body = json.loads(text)
         except ValueError as exc:
             raise CLIError(f"--body is not valid JSON: {exc}") from exc
     result = Client.for_args(args).request(args.method.upper(), url,
@@ -82,7 +92,8 @@ def register(subparsers) -> None:
              arg("path", help="full URL or path under www.googleapis.com "
                               "(e.g. drive/v3/about)"),
              arg("--param", action="append", metavar="KEY=VALUE"),
-             arg("--body", help="JSON request body"))),
+             arg("--body", help="JSON request body (@file reads from a "
+                                "file, - reads from stdin)"))),
         Cmd("describe", cmd_describe,
             "list an API's methods (Discovery service)",
             (arg("service", help="e.g. gmail, drive, tasks"),
