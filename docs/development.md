@@ -30,6 +30,9 @@ flowchart LR
     E --> A
 ```
 
+CI (`.github/workflows/ci.yml`) runs this exact script — not a parallel
+test configuration — on every push, across Python 3.10–3.13.
+
 ## Tests never touch the network
 
 All HTTP funnels through `gsuite/transport.py:request()`. The
