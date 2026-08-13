@@ -75,6 +75,65 @@ def test_paged_respects_limit(client):
     assert len(items) == 2  # second page never requested
 
 
+# -- retry / backoff ---------------------------------------------------------
+
+@pytest.fixture
+def sleeps(monkeypatch):
+    """Record delays passed to gsuite.api._sleep instead of really sleeping."""
+    recorded = []
+    monkeypatch.setattr("gsuite.api._sleep", recorded.append, raising=False)
+    return recorded
+
+
+def test_429_retries_then_succeeds(client, sleeps):
+    c, ft = client
+    ft.add("GET", "/v1/x", {"error": {"message": "rate limited"}}, status=429)
+    ft.add("GET", "/v1/x", {"ok": True})
+    assert c.get("https://example.googleapis.com/v1/x") == {"ok": True}
+    assert sleeps == [1]
+
+
+def test_persistent_503_backs_off_then_raises(client, sleeps):
+    c, ft = client
+    for _ in range(4):
+        ft.add("GET", "/v1/x", {"error": {"message": "backend error"}}, status=503)
+    with pytest.raises(APIError, match="backend error") as exc:
+        c.get("https://example.googleapis.com/v1/x")
+    assert exc.value.status == 503
+    assert sleeps == [1, 2, 4]
+    assert len(ft.calls) == 4
+
+
+def test_retry_after_header_overrides_backoff(client, sleeps):
+    c, ft = client
+    ft.add("GET", "/v1/x", {"error": {"message": "rate limited"}}, status=429,
+           headers={"Retry-After": "7"})
+    ft.add("GET", "/v1/x", {"ok": True})
+    assert c.get("https://example.googleapis.com/v1/x") == {"ok": True}
+    assert sleeps == [7]
+
+
+def test_400_is_not_retried(client, sleeps):
+    c, ft = client
+    ft.add("GET", "/v1/x", {"error": {"message": "bad request"}}, status=400)
+    with pytest.raises(APIError) as exc:
+        c.get("https://example.googleapis.com/v1/x")
+    assert exc.value.status == 400
+    assert len(ft.calls) == 1
+    assert sleeps == []
+
+
+def test_401_refresh_flow_does_not_sleep(client, sleeps):
+    c, ft = client
+    ft.add("GET", "/v1/x", {"error": {"message": "unauthorized"}}, status=401)
+    ft.add("POST", "oauth2.googleapis.com/token",
+           {"access_token": "tok2", "expires_in": 3600})
+    ft.add("GET", "/v1/x", {"ok": True})
+    assert c.get("https://example.googleapis.com/v1/x") == {"ok": True}
+    assert ft.calls[-1]["headers"]["Authorization"] == "Bearer tok2"
+    assert sleeps == []
+
+
 # -- output ------------------------------------------------------------------
 
 class FakeArgs:
