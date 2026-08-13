@@ -68,6 +68,80 @@ name. `auth logout <email>` removes the account, its token, and any aliases.
 For other tooling, `gsuite auth token` prints a fresh access token — see
 [Scripting & automation](scripting.md).
 
+## Other credential sources
+
+`gsuite auth login` is the happy path, but two other sources work anywhere a
+command needs a bearer token — useful in CI, containers, and shared shells.
+
+### A direct access token
+
+Set `GSUITE_ACCESS_TOKEN` and gsuite uses it verbatim: no store lookup, no
+refresh, and **no configured account required**.
+
+```console
+$ export GSUITE_ACCESS_TOKEN=$(gcloud auth print-access-token)
+$ gsuite drive ls          # works on a machine that never ran `auth login`
+```
+
+The token is used exactly as given, so it must already carry the scopes the
+command needs, and gsuite cannot renew it when it expires (typically one
+hour). It wins over every other source, which also makes it the quickest way
+to test a token by hand.
+
+### Application Default Credentials
+
+When no stored token is available, gsuite falls back to ADC — the same file
+`gcloud auth application-default login` writes:
+
+```console
+$ gcloud auth application-default login
+$ gsuite auth adc
+path: /home/you/.config/gcloud/application_default_credentials.json
+exists: yes
+type: authorized_user
+usable: yes
+```
+
+- The location is `$GOOGLE_APPLICATION_CREDENTIALS` if set, otherwise
+  `~/.config/gcloud/application_default_credentials.json`.
+- `gsuite auth adc` exits `0` when the file is usable and `1` when it is
+  missing or unusable, so it drops straight into a shell `if`.
+- The minted access token is cached under the current account, exactly like a
+  token from `auth login`.
+
+**Service-account keys are not supported.** Authenticating with one means
+signing a JWT assertion with RS256, and gsuite is deliberately
+zero-dependency (Python stdlib only, no `cryptography`). Pointing ADC at a
+`"type": "service_account"` file therefore fails with a clear message rather
+than a traceback — use `gsuite auth login`, or mint a token elsewhere and
+export it as `GSUITE_ACCESS_TOKEN`.
+
+Resolution order for every API call:
+
+1. `$GSUITE_ACCESS_TOKEN`
+2. the account's stored token (refreshed automatically when stale)
+3. Application Default Credentials
+
+`gsuite auth doctor` prints the source in effect:
+
+```console
+$ gsuite auth doctor
+OK   credential source: ADC (/home/you/.config/gcloud/application_default_credentials.json)
+```
+
+### Authorizing everything at once
+
+`--services all` expands to every service gsuite knows about — one consent
+screen, one token that covers the whole CLI:
+
+```console
+$ gsuite auth login --services all
+Logged in as you@example.com (services: admin, calendar, chat, contacts, docs, drive, forms, gmail, keep, meet, sheets, slides, tasks)
+```
+
+Convenient for a personal machine; prefer an explicit list for shared or
+production credentials.
+
 ## Troubleshooting
 
 `gsuite auth doctor` checks the whole chain and exits non-zero on failure:
@@ -85,3 +159,4 @@ FAIL at least one account — run `gsuite auth login <email>`
 | `token has no refresh_token` | client re-used an old consent | `gsuite auth login` again (we always request `prompt=consent`) |
 | `HTTP 403 … accessNotConfigured` | API not enabled in your GCP project | enable it in **APIs & Services** |
 | `HTTP 401` loops | token revoked | `gsuite auth login <email>` |
+| `is a service_account key` | ADC points at a service-account JSON | `gsuite auth login`, or export `GSUITE_ACCESS_TOKEN` |

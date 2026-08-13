@@ -31,8 +31,11 @@ class Client:
     @classmethod
     def for_args(cls, args) -> "Client":
         store = ConfigStore()
-        return cls(store, store.resolve(getattr(args, "account", None)),
-                   readonly=getattr(args, "readonly", False))
+        # A caller who supplies $GSUITE_ACCESS_TOKEN needs no configured
+        # account at all, so account resolution is skipped entirely.
+        email = ("" if oauth.env_access_token()
+                 else store.resolve(getattr(args, "account", None)))
+        return cls(store, email, readonly=getattr(args, "readonly", False))
 
     # -- core ----------------------------------------------------------------
 
@@ -57,9 +60,10 @@ class Client:
             if status == 401:
                 # Access token revoked or expired early: force a refresh and
                 # retry once (does not count against the backoff budget).
-                token = self.store.load_token(self.email) or {}
-                token["expiry"] = 0
-                self.store.save_token(self.email, token)
+                token = self.store.load_token(self.email) if self.email else None
+                if token is not None:
+                    token["expiry"] = 0
+                    self.store.save_token(self.email, token)
                 hdrs["Authorization"] = (
                     f"Bearer {oauth.get_access_token(self.store, self.email)}"
                 )
