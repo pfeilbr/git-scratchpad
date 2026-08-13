@@ -48,5 +48,6 @@ nav:
       - chat: reference/chat.md
       - keep: reference/keep.md
       - admin: reference/admin.md
+      - forms: reference/forms.md
       - api: reference/api.md
   - Development: development.md
