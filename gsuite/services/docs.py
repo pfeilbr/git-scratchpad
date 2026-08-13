@@ -1,4 +1,4 @@
-"""`gsuite docs` — create, cat, append."""
+"""`gsuite docs` — create, cat, append, replace."""
 from __future__ import annotations
 
 from gsuite.api import Client
@@ -37,11 +37,31 @@ def cmd_append(args) -> int:
     return 0
 
 
+def cmd_replace(args) -> int:
+    reply = Client.for_args(args).post(f"{BASE}/{args.id}:batchUpdate", json_body={
+        "requests": [{"replaceAllText": {
+            "containsText": {"text": args.find, "matchCase": args.match_case},
+            "replaceText": getattr(args, "with"),
+        }}],
+    })
+    replies = reply.get("replies", [])
+    changed = (replies[0].get("replaceAllText", {}).get("occurrencesChanged", 0)
+               if replies else 0)
+    confirm("replaced", changed, "occurrence(s) in", args.id)
+    return 0
+
+
 def register(subparsers) -> None:
-    register_service(subparsers, "docs", "Google Docs: create, cat, append", [
+    register_service(subparsers, "docs",
+                     "Google Docs: create, cat, append, replace", [
         Cmd("create", cmd_create, "create a document",
             (arg("--title", required=True),)),
         Cmd("cat", cmd_cat, "print a document's plain text", (arg("id"),)),
         Cmd("append", cmd_append, "append text to a document",
             (arg("id"), arg("--text", required=True))),
+        Cmd("replace", cmd_replace, "replace all occurrences of text",
+            (arg("id"), arg("--find", required=True, help="text to find"),
+             arg("--with", required=True, help="replacement text"),
+             arg("--match-case", action="store_true",
+                 help="match case exactly"))),
     ])
