@@ -104,3 +104,69 @@ def test_admin_groups_and_members(svc):
     run("admin", "groups", "add-member", "eng@corp.com", "new@corp.com")
     assert json.loads(ft.calls[-1]["data"]) == {"email": "new@corp.com",
                                                 "role": "MEMBER"}
+
+
+def test_admin_users_update_partial(svc):
+    ft, run = svc
+    ft.add("PATCH", "users/u%40corp.com", {})
+    out = run("admin", "users", "update", "u@corp.com",
+              "--first", "Jane", "--orgunit", "/Engineering")
+    assert json.loads(ft.calls[0]["data"]) == {
+        "name": {"givenName": "Jane"}, "orgUnitPath": "/Engineering"}
+    assert "updated u@corp.com" in out
+    ft.add("PATCH", "users/u%40corp.com", {})
+    run("admin", "users", "update", "u@corp.com",
+        "--last", "Doe", "--primary-email", "jane@corp.com")
+    assert json.loads(ft.calls[-1]["data"]) == {
+        "name": {"familyName": "Doe"}, "primaryEmail": "jane@corp.com"}
+
+
+def test_admin_users_update_requires_a_flag(svc):
+    ft, run = svc
+    run("admin", "users", "update", "u@corp.com", expect=1)
+    assert ft.calls == []
+
+
+def test_admin_users_reset_password(svc):
+    ft, run = svc
+    ft.add("PATCH", "users/u%40corp.com", {})
+    out = run("admin", "users", "reset-password", "u@corp.com",
+              "--password", "s3cret", "--change-at-next-login")
+    assert json.loads(ft.calls[0]["data"]) == {
+        "password": "s3cret", "changePasswordAtNextLogin": True}
+    assert "password reset for u@corp.com" in out
+    ft.add("PATCH", "users/u%40corp.com", {})
+    run("admin", "users", "reset-password", "u@corp.com",
+        "--password", "s3cret")
+    assert json.loads(ft.calls[-1]["data"]) == {
+        "password": "s3cret", "changePasswordAtNextLogin": False}
+
+
+def test_admin_groups_rm_member(svc):
+    ft, run = svc
+    ft.add("DELETE", "groups/eng%40corp.com/members/u%40corp.com", {})
+    out = run("admin", "groups", "rm-member", "eng@corp.com", "u@corp.com")
+    assert "removed u@corp.com from eng@corp.com" in out
+    assert ft.calls[0]["method"] == "DELETE"
+    assert "groups/eng%40corp.com/members/u%40corp.com" in ft.calls[0]["url"]
+
+
+def test_admin_groups_delete(svc):
+    ft, run = svc
+    ft.add("DELETE", "groups/eng%40corp.com", {})
+    out = run("admin", "groups", "delete", "eng@corp.com")
+    assert "deleted eng@corp.com" in out
+    assert ft.calls[0]["method"] == "DELETE"
+
+
+def test_admin_orgunits(svc):
+    ft, run = svc
+    ft.add("GET", "customer/my_customer/orgunits", {"organizationUnits": [
+        {"orgUnitPath": "/Engineering", "name": "Engineering",
+         "parentOrgUnitPath": "/"},
+        {"orgUnitPath": "/Engineering/Platform", "name": "Platform",
+         "parentOrgUnitPath": "/Engineering"}]})
+    out = run("admin", "orgunits")
+    assert "PATH" in out and "NAME" in out and "PARENT" in out
+    assert "/Engineering/Platform" in out and "Platform" in out
+    assert "type=all" in ft.calls[0]["url"]

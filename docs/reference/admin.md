@@ -51,6 +51,37 @@ usage: gsuite admin users create [-h] --email EMAIL --first FIRST --last LAST
 | `--last LAST` | yes |  |  |
 | `--password PASSWORD` | yes |  |  |
 
+#### `gsuite admin users update`
+
+```text
+usage: gsuite admin users update [-h] [--first FIRST] [--last LAST]
+                                 [--orgunit ORGUNIT]
+                                 [--primary-email PRIMARY_EMAIL]
+                                 email
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `email` | yes |  |  |
+| `--first FIRST` |  |  |  |
+| `--last LAST` |  |  |  |
+| `--orgunit ORGUNIT` |  |  | org unit path, e.g. /Engineering |
+| `--primary-email PRIMARY_EMAIL` |  |  | new primary email |
+
+#### `gsuite admin users reset-password`
+
+```text
+usage: gsuite admin users reset-password [-h] --password PASSWORD
+                                         [--change-at-next-login]
+                                         email
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `email` | yes |  |  |
+| `--password PASSWORD` | yes |  |  |
+| `--change-at-next-login` |  |  | force a password change at next login |
+
 #### `gsuite admin users suspend`
 
 ```text
@@ -128,6 +159,35 @@ usage: gsuite admin groups add-member [-h] [--role {MEMBER,MANAGER,OWNER}]
 | `group` | yes |  |  |
 | `email` | yes |  |  |
 | `--role {MEMBER,MANAGER,OWNER}` |  | `MEMBER` |  |
+
+#### `gsuite admin groups rm-member`
+
+```text
+usage: gsuite admin groups rm-member [-h] group email
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `group` | yes |  |  |
+| `email` | yes |  |  |
+
+#### `gsuite admin groups delete`
+
+```text
+usage: gsuite admin groups delete [-h] group
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `group` | yes |  |  |
+
+### `gsuite admin orgunits`
+
+List organizational units.
+
+```text
+usage: gsuite admin orgunits [-h]
+```
 
 ## Examples
 
