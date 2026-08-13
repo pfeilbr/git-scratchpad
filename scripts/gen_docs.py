@@ -133,6 +133,18 @@ EXAMPLES: dict[str, list[tuple[str, str, str]]] = {
          "gsuite --json admin users list --query 'isSuspended=true'",
          '[\n  {"primaryEmail": "left@corp.com", "suspended": true}\n]'),
     ],
+    "forms": [
+        ("Create a form and inspect it",
+         "gsuite forms create --title 'Team survey'\n"
+         "gsuite forms get 1FormId",
+         "id: 1FormId\ntitle: Team survey\n"
+         "url: https://docs.google.com/forms/d/e/…/viewform\nitems: 0"),
+        ("Review the latest responses",
+         "gsuite forms responses 1FormId --max 2",
+         "ID    SUBMITTED\n"
+         "r9a1  2026-01-05T10:00:00Z\n"
+         "r9a2  2026-01-06T11:30:00Z"),
+    ],
     "api": [
         ("Call any endpoint (no dedicated command needed)",
          "gsuite api call GET drive/v3/about --param fields=user",

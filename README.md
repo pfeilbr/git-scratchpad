@@ -111,6 +111,9 @@ tables and worked examples.
 `groups list|create|members|add-member`
 (Requires a Workspace admin account with the `admin` service authorized.)
 
+### `gsuite forms`
+`create --title` · `get <id>` · `questions <id>` · `responses <id> [--max]`
+
 ### `gsuite api`
 The escape hatch — every Google API method is reachable even without a
 hand-crafted command:

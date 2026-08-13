@@ -18,4 +18,5 @@ One page per service, generated from the CLI's own parser tree by
 | [`gsuite chat`](chat.md) | Google Chat spaces and messages |
 | [`gsuite keep`](keep.md) | Google Keep notes |
 | [`gsuite admin`](admin.md) | Workspace admin: users, groups |
+| [`gsuite forms`](forms.md) | Google Forms: create, inspect, responses |
 | [`gsuite api`](api.md) | raw calls to any Google API |
