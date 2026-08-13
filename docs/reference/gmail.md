@@ -105,12 +105,96 @@ usage: gsuite gmail forward [-h] --to TO [--body BODY] id
 | `--to TO` | yes |  |  |
 | `--body BODY` |  |  |  |
 
+### `gsuite gmail archive`
+
+Remove a message from the inbox.
+
+```text
+usage: gsuite gmail archive [-h] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+
+### `gsuite gmail unarchive`
+
+Move a message back to the inbox.
+
+```text
+usage: gsuite gmail unarchive [-h] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+
+### `gsuite gmail mark-read`
+
+Mark a message read.
+
+```text
+usage: gsuite gmail mark-read [-h] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+
+### `gsuite gmail mark-unread`
+
+Mark a message unread.
+
+```text
+usage: gsuite gmail mark-unread [-h] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+
+### `gsuite gmail spam`
+
+Mark a message as spam.
+
+```text
+usage: gsuite gmail spam [-h] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+
+### `gsuite gmail unspam`
+
+Take a message out of spam.
+
+```text
+usage: gsuite gmail unspam [-h] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+
 ### `gsuite gmail trash`
 
 Move a message to trash.
 
 ```text
 usage: gsuite gmail trash [-h] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+
+### `gsuite gmail untrash`
+
+Restore a message from trash.
+
+```text
+usage: gsuite gmail untrash [-h] id
 ```
 
 | Argument | Required | Default | Description |
