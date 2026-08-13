@@ -1,6 +1,6 @@
 # gsuite slides
 
-Presentations: create, info.
+Presentations: create, info, cat, add.
 
 ```text
 usage: gsuite slides [-h] <command> ...
@@ -33,6 +33,32 @@ usage: gsuite slides info [-h] id
 | Argument | Required | Default | Description |
 | --- | --- | --- | --- |
 | `id` | yes |  |  |
+
+### `gsuite slides cat`
+
+Print each slide's text.
+
+```text
+usage: gsuite slides cat [-h] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+
+### `gsuite slides add`
+
+Append a title-and-body slide.
+
+```text
+usage: gsuite slides add [-h] --title TITLE [--body BODY] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+| `--title TITLE` | yes |  |  |
+| `--body BODY` |  |  | body placeholder text |
 
 ## Examples
 

@@ -101,3 +101,78 @@ def test_slides_info_counts_slides(gsvc):
     })
     out = run("slides", "info", "pres1")
     assert "Deck" in out and "2" in out
+
+
+# -- docs replace -------------------------------------------------------------
+
+def test_docs_replace_builds_request_and_reports_occurrences(gsvc):
+    ft, run = gsvc
+    ft.add("POST", "documents/doc1:batchUpdate", {
+        "replies": [{"replaceAllText": {"occurrencesChanged": 3}}]})
+    out = run("docs", "replace", "doc1", "--find", "old", "--with", "new")
+    rat = json.loads(ft.calls[0]["data"])["requests"][0]["replaceAllText"]
+    assert rat["containsText"] == {"text": "old", "matchCase": False}
+    assert rat["replaceText"] == "new"
+    assert "3" in out and "occurrence" in out and "doc1" in out
+
+
+def test_docs_replace_match_case_flag(gsvc):
+    ft, run = gsvc
+    ft.add("POST", "documents/doc1:batchUpdate", {"replies": [{}]})
+    run("docs", "replace", "doc1", "--find", "Old", "--with", "New",
+        "--match-case")
+    rat = json.loads(ft.calls[0]["data"])["requests"][0]["replaceAllText"]
+    assert rat["containsText"]["matchCase"] is True
+
+
+# -- slides cat / add ---------------------------------------------------------
+
+def test_slides_cat_prints_headers_and_text(gsvc):
+    ft, run = gsvc
+    ft.add("GET", "presentations/pres1", {
+        "presentationId": "pres1",
+        "slides": [
+            {"pageElements": [
+                {"shape": {"text": {"textElements": [
+                    {"textRun": {"content": "Hello title\n"}},
+                    {"paragraphMarker": {}},
+                ]}}},
+                {"line": {}},
+            ]},
+            {"pageElements": [
+                {"shape": {"text": {"textElements": [
+                    {"textRun": {"content": "Second slide body\n"}},
+                ]}}},
+            ]},
+        ],
+    })
+    out = run("slides", "cat", "pres1")
+    assert "-- slide 1 --" in out and "-- slide 2 --" in out
+    assert (out.index("-- slide 1 --") < out.index("Hello title")
+            < out.index("-- slide 2 --") < out.index("Second slide body"))
+
+
+def test_slides_add_maps_placeholders_to_inserted_text(gsvc):
+    ft, run = gsvc
+    ft.add("POST", "presentations/pres1:batchUpdate", {})
+    run("slides", "add", "pres1", "--title", "T", "--body", "B")
+    reqs = json.loads(ft.calls[0]["data"])["requests"]
+    create = reqs[0]["createSlide"]
+    assert create["slideLayoutReference"] == {
+        "predefinedLayout": "TITLE_AND_BODY"}
+    ids = {m["layoutPlaceholder"]["type"]: m["objectId"]
+           for m in create["placeholderIdMappings"]}
+    assert set(ids) == {"TITLE", "BODY"} and ids["TITLE"] != ids["BODY"]
+    inserts = {r["insertText"]["text"]: r["insertText"]["objectId"]
+               for r in reqs[1:]}
+    assert inserts == {"T": ids["TITLE"], "B": ids["BODY"]}
+
+
+def test_slides_add_omits_body_insert_when_no_body(gsvc):
+    ft, run = gsvc
+    ft.add("POST", "presentations/pres1:batchUpdate", {})
+    out = run("slides", "add", "pres1", "--title", "Only title")
+    reqs = json.loads(ft.calls[0]["data"])["requests"]
+    assert len(reqs) == 2
+    assert reqs[1]["insertText"]["text"] == "Only title"
+    assert "added slide to pres1" in out

@@ -1,6 +1,6 @@
 # gsuite docs
 
-Google Docs: create, cat, append.
+Google Docs: create, cat, append, replace.
 
 ```text
 usage: gsuite docs [-h] <command> ...
@@ -46,6 +46,21 @@ usage: gsuite docs append [-h] --text TEXT id
 | --- | --- | --- | --- |
 | `id` | yes |  |  |
 | `--text TEXT` | yes |  |  |
+
+### `gsuite docs replace`
+
+Replace all occurrences of text.
+
+```text
+usage: gsuite docs replace [-h] --find FIND --with WITH [--match-case] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+| `--find FIND` | yes |  | text to find |
+| `--with WITH` | yes |  | replacement text |
+| `--match-case` |  |  | match case exactly |
 
 ## Examples
 
