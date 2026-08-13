@@ -48,6 +48,32 @@ usage: gsuite drive audit [-h] [--max MAX]
 | --- | --- | --- | --- |
 | `--max MAX` |  | `100` | maximum results (default: 100) |
 
+### `gsuite drive info`
+
+Show a file's metadata.
+
+```text
+usage: gsuite drive info [-h] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+
+### `gsuite drive mv`
+
+Move and/or rename a file.
+
+```text
+usage: gsuite drive mv [-h] [--parent PARENT] [--name NAME] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+| `--parent PARENT` |  |  | new parent folder id |
+| `--name NAME` |  |  | new file name |
+
 ### `gsuite drive mkdir`
 
 Create a folder.
@@ -126,6 +152,30 @@ List a file's permissions.
 
 ```text
 usage: gsuite drive permissions [-h] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+
+### `gsuite drive trash`
+
+Move a file to the trash.
+
+```text
+usage: gsuite drive trash [-h] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+
+### `gsuite drive restore`
+
+Restore a file from the trash.
+
+```text
+usage: gsuite drive restore [-h] id
 ```
 
 | Argument | Required | Default | Description |

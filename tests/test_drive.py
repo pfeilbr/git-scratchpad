@@ -106,3 +106,62 @@ def test_audit_finds_link_shared_files(drive):
     out = run("drive", "audit")
     assert "notes.txt" in out
     assert "visibility" in ft.calls[0]["url"]
+
+
+INFO_BODY = {"id": "f1", "name": "notes.txt", "mimeType": "text/plain",
+             "size": "12", "modifiedTime": "2026-01-05T00:00:00Z",
+             "parents": ["p1", "p2"], "webViewLink": "http://link",
+             "owners": [{"emailAddress": "me@x.com"}], "trashed": False}
+
+
+def test_info_shows_metadata(drive):
+    ft, run = drive
+    ft.add("GET", "files/f1?fields=", INFO_BODY)
+    out = run("drive", "info", "f1")
+    assert "owners%28emailAddress%29" in ft.calls[0]["url"]
+    assert "name: notes.txt" in out
+    assert "type: text/plain" in out
+    assert "parents: p1,p2" in out
+    assert "owner: me@x.com" in out
+    assert "link: http://link" in out
+    assert "trashed: False" in out
+
+
+def test_mv_to_new_parent(drive):
+    ft, run = drive
+    ft.add("GET", "files/f1?fields=parents", {"parents": ["old1", "old2"]})
+    ft.add("PATCH", "files/f1", {"id": "f1"})
+    out = run("drive", "mv", "f1", "--parent", "newp")
+    patch = ft.calls[1]
+    assert patch["method"] == "PATCH"
+    assert "addParents=newp" in patch["url"]
+    assert "removeParents=old1%2Cold2" in patch["url"]
+    assert "moved f1" in out
+
+
+def test_mv_rename_only(drive):
+    ft, run = drive
+    ft.add("PATCH", "files/f1", {"id": "f1"})
+    out = run("drive", "mv", "f1", "--name", "renamed.txt")
+    assert len(ft.calls) == 1  # no parents lookup when only renaming
+    assert json.loads(ft.calls[0]["data"]) == {"name": "renamed.txt"}
+    assert "addParents" not in ft.calls[0]["url"]
+    assert "renamed f1" in out
+
+
+def test_mv_requires_parent_or_name(drive):
+    ft, run = drive
+    run("drive", "mv", "f1", expect=1)
+    assert ft.calls == []
+
+
+def test_trash_and_restore(drive):
+    ft, run = drive
+    ft.add("PATCH", "files/f1", {"id": "f1"})
+    out = run("drive", "trash", "f1")
+    assert json.loads(ft.calls[0]["data"]) == {"trashed": True}
+    assert "trashed f1" in out
+    ft.add("PATCH", "files/f1", {"id": "f1"})
+    out = run("drive", "restore", "f1")
+    assert json.loads(ft.calls[-1]["data"]) == {"trashed": False}
+    assert "restored f1" in out
