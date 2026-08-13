@@ -129,6 +129,9 @@ gsuite api call GET drive/v3/about --param fields=user
 gsuite api call POST https://forms.googleapis.com/v1/forms --body '{"info":{"title":"F"}}'
 ```
 
+### `gsuite completion`
+`bash` · `zsh` — tab completion generated from the parser tree; enable with `source <(gsuite completion bash)`
+
 ## Development
 
 Built strictly red-green, one increment per commit, on a single branch.

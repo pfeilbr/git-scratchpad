@@ -51,4 +51,5 @@ nav:
       - forms: reference/forms.md
       - meet: reference/meet.md
       - api: reference/api.md
+      - completion: reference/completion.md
   - Development: development.md

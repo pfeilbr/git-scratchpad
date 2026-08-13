@@ -21,3 +21,4 @@ One page per service, generated from the CLI's own parser tree by
 | [`gsuite forms`](forms.md) | Google Forms: create, inspect, responses |
 | [`gsuite meet`](meet.md) | Google Meet spaces and conferences |
 | [`gsuite api`](api.md) | raw calls to any Google API |
+| [`gsuite completion`](completion.md) | shell tab-completion (generated from the parser tree) |

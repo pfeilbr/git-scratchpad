@@ -165,6 +165,16 @@ EXAMPLES: dict[str, list[tuple[str, str, str]]] = {
          "METHOD               HTTP  PATH             DESCRIPTION\n"
          "forms.forms.create   POST  v1/forms         Create a new form."),
     ],
+    "completion": [
+        ("Enable bash completion (add the source line to ~/.bashrc to persist)",
+         "source <(gsuite completion bash)\n"
+         "gsuite completion bash | tail -1",
+         "complete -F _gsuite gsuite"),
+        ("zsh reuses the same script via the bashcompinit shim",
+         "source <(gsuite completion zsh)\n"
+         "gsuite completion zsh | head -1",
+         "autoload -U +X bashcompinit && bashcompinit"),
+    ],
 }
 
 
