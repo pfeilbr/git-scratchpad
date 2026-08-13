@@ -8,13 +8,16 @@ import sys
 
 from gsuite.api import Client
 from gsuite.cmdreg import Cmd, arg, max_flag, register_service
-from gsuite.output import confirm, emit
+from gsuite.errors import CLIError
+from gsuite.output import confirm, emit, emit_obj
 from gsuite.services._common import emit_paged
 
 BASE = "https://www.googleapis.com/drive/v3"
 UPLOAD_BASE = "https://www.googleapis.com/upload/drive/v3"
 FOLDER_MIME = "application/vnd.google-apps.folder"
 FILE_FIELDS = "files(id,name,mimeType,modifiedTime,size,webViewLink),nextPageToken"
+INFO_FIELDS = ("id,name,mimeType,size,modifiedTime,parents,webViewLink,"
+               "owners(emailAddress),trashed")
 FILE_COLUMNS = [("ID", "id"), ("NAME", "name"), ("TYPE", "mimeType"),
                 ("MODIFIED", "modifiedTime"), ("SIZE", "size")]
 OUTPUT_FLAG = arg("-o", "--output", help="output path (default: stdout)")
@@ -44,6 +47,50 @@ def cmd_audit(args) -> int:
     query = ("(visibility = 'anyoneWithLink' or visibility = 'anyoneCanFind') "
              "and trashed = false")
     return _emit_files(args, query, extra_columns=[("LINK", "webViewLink")])
+
+
+def cmd_info(args) -> int:
+    meta = Client.for_args(args).get(f"{BASE}/files/{args.id}",
+                                     params={"fields": INFO_FIELDS})
+    emit_obj(args, meta, [
+        ("id", "id"), ("name", "name"), ("type", "mimeType"),
+        ("size", "size"), ("modified", "modifiedTime"),
+        ("parents", lambda m: ",".join(m.get("parents", []))),
+        ("link", "webViewLink"),
+        ("owner", lambda m: (m.get("owners") or [{}])[0].get("emailAddress")),
+        ("trashed", "trashed"),
+    ])
+    return 0
+
+
+def cmd_mv(args) -> int:
+    if not args.parent and not args.name:
+        raise CLIError("nothing to do: pass --parent and/or --name")
+    client = Client.for_args(args)
+    params = None
+    if args.parent:
+        current = client.get(f"{BASE}/files/{args.id}",
+                             params={"fields": "parents"}).get("parents", [])
+        params = {"addParents": args.parent,
+                  "removeParents": ",".join(current)}
+    body = {"name": args.name} if args.name else {}
+    client.patch(f"{BASE}/files/{args.id}", params=params, json_body=body)
+    confirm("moved" if args.parent else "renamed", args.id)
+    return 0
+
+
+def cmd_trash(args) -> int:
+    Client.for_args(args).patch(f"{BASE}/files/{args.id}",
+                                json_body={"trashed": True})
+    confirm("trashed", args.id)
+    return 0
+
+
+def cmd_restore(args) -> int:
+    Client.for_args(args).patch(f"{BASE}/files/{args.id}",
+                                json_body={"trashed": False})
+    confirm("restored", args.id)
+    return 0
 
 
 def cmd_mkdir(args) -> int:
@@ -149,6 +196,10 @@ def register(subparsers) -> None:
             (arg("query"), max_flag(50))),
         Cmd("audit", cmd_audit, "find link-/publicly-shared files",
             (max_flag(100),)),
+        Cmd("info", cmd_info, "show a file's metadata", (arg("id"),)),
+        Cmd("mv", cmd_mv, "move and/or rename a file",
+            (arg("id"), arg("--parent", help="new parent folder id"),
+             arg("--name", help="new file name"))),
         Cmd("mkdir", cmd_mkdir, "create a folder",
             (arg("name"), arg("--parent"))),
         Cmd("upload", cmd_upload, "upload a local file",
@@ -167,6 +218,9 @@ def register(subparsers) -> None:
                  choices=["reader", "commenter", "writer", "organizer",
                           "fileOrganizer", "owner"]))),
         Cmd("permissions", cmd_permissions, "list a file's permissions",
+            (arg("id"),)),
+        Cmd("trash", cmd_trash, "move a file to the trash", (arg("id"),)),
+        Cmd("restore", cmd_restore, "restore a file from the trash",
             (arg("id"),)),
         Cmd("rm", cmd_rm, "delete a file permanently", (arg("id"),)),
         Cmd("copy", cmd_copy, "copy a file", (arg("id"), arg("--name"))),
