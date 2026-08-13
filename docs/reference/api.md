@@ -23,7 +23,7 @@ usage: gsuite api call [-h] [--param KEY=VALUE] [--body BODY] method path
 | `method` | yes |  | GET/POST/PATCH/PUT/DELETE |
 | `path` | yes |  | full URL or path under www.googleapis.com (e.g. drive/v3/about) |
 | `--param KEY=VALUE` |  |  |  |
-| `--body BODY` |  |  | JSON request body |
+| `--body BODY` |  |  | JSON request body (@file reads from a file, - reads from stdin) |
 
 ### `gsuite api describe`
 

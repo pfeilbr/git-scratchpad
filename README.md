@@ -57,7 +57,8 @@ on GitHub):
 ## Commands
 
 Global flags (before the service name): `-a/--account <email|alias>`,
-`--json` for machine-readable output. The summary below is the short
+`--json` for machine-readable output, `--readonly` to refuse any request
+that could modify data. The summary below is the short
 version; see the [command reference](docs/reference/index.md) for options
 tables and worked examples.
 
