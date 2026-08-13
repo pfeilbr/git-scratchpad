@@ -47,6 +47,40 @@ usage: gsuite tasks add [-h] [--list LIST] [--due DUE] [--notes NOTES] title
 | `--due DUE` |  |  | YYYY-MM-DD or RFC3339 |
 | `--notes NOTES` |  |  |  |
 
+### `gsuite tasks update`
+
+Update a task's fields.
+
+```text
+usage: gsuite tasks update [-h] [--list LIST] [--title TITLE] [--notes NOTES]
+                           [--due DUE]
+                           id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+| `--list LIST` |  | `@default` | task list id (default: @default) |
+| `--title TITLE` |  |  |  |
+| `--notes NOTES` |  |  |  |
+| `--due DUE` |  |  | YYYY-MM-DD or RFC3339 |
+
+### `gsuite tasks move`
+
+Reorder or re-parent a task.
+
+```text
+usage: gsuite tasks move [-h] [--list LIST] [--after AFTER] [--parent PARENT]
+                         id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+| `--list LIST` |  | `@default` | task list id (default: @default) |
+| `--after AFTER` |  |  | place after this task id |
+| `--parent PARENT` |  |  | make a subtask of this task id |
+
 ### `gsuite tasks done`
 
 Mark a task completed.
@@ -71,6 +105,18 @@ usage: gsuite tasks rm [-h] [--list LIST] id
 | Argument | Required | Default | Description |
 | --- | --- | --- | --- |
 | `id` | yes |  |  |
+| `--list LIST` |  | `@default` | task list id (default: @default) |
+
+### `gsuite tasks clear-completed`
+
+Remove completed tasks from a list.
+
+```text
+usage: gsuite tasks clear-completed [-h] [--list LIST]
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
 | `--list LIST` |  | `@default` | task list id (default: @default) |
 
 ## Examples

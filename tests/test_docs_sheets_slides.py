@@ -176,3 +176,42 @@ def test_slides_add_omits_body_insert_when_no_body(gsvc):
     assert len(reqs) == 2
     assert reqs[1]["insertText"]["text"] == "Only title"
     assert "added slide to pres1" in out
+
+
+# -- sheets tabs --------------------------------------------------------------
+
+def test_sheets_tabs_lists_properties(gsvc):
+    ft, run = gsvc
+    ft.add("GET", "spreadsheets/ss1", {"sheets": [
+        {"properties": {"sheetId": 0, "title": "Sheet1", "index": 0,
+                        "gridProperties": {"rowCount": 1000,
+                                           "columnCount": 26}}},
+        {"properties": {"sheetId": 77, "title": "Data", "index": 1,
+                        "gridProperties": {"rowCount": 50,
+                                           "columnCount": 5}}},
+    ]})
+    out = run("sheets", "tabs", "ss1")
+    assert "ID" in out and "TITLE" in out and "ROWS" in out and "COLS" in out
+    assert "Sheet1" in out and "1000" in out and "26" in out
+    assert "77" in out and "Data" in out and "50" in out
+    url = ft.calls[0]["url"]
+    assert "fields=sheets" in url and "gridProperties" in url
+
+
+def test_sheets_add_tab_request_and_confirm(gsvc):
+    ft, run = gsvc
+    ft.add("POST", "spreadsheets/ss1:batchUpdate", {"replies": [
+        {"addSheet": {"properties": {"sheetId": 123, "title": "New"}}}]})
+    out = run("sheets", "add-tab", "ss1", "--title", "New")
+    assert json.loads(ft.calls[0]["data"]) == {
+        "requests": [{"addSheet": {"properties": {"title": "New"}}}]}
+    assert "added tab" in out and "123" in out and "New" in out
+
+
+def test_sheets_rm_tab_coerces_sheet_id_to_int(gsvc):
+    ft, run = gsvc
+    ft.add("POST", "spreadsheets/ss1:batchUpdate", {"replies": [{}]})
+    out = run("sheets", "rm-tab", "ss1", "--tab", "77")
+    assert json.loads(ft.calls[0]["data"]) == {
+        "requests": [{"deleteSheet": {"sheetId": 77}}]}
+    assert "removed tab" in out and "77" in out

@@ -87,3 +87,37 @@ def test_tasks_rm_custom_list(svc):
     ft, run = svc
     ft.add("DELETE", "lists/tl9/tasks/t1", {})
     run("tasks", "rm", "t1", "--list", "tl9")
+
+
+def test_tasks_update_patches_only_given_fields(svc):
+    ft, run = svc
+    ft.add("PATCH", "lists/@default/tasks/t1", {"id": "t1"})
+    out = run("tasks", "update", "t1", "--title", "New title",
+              "--due", "2026-02-01")
+    assert json.loads(ft.calls[0]["data"]) == {
+        "title": "New title", "due": "2026-02-01T00:00:00Z"}
+    assert "updated" in out and "t1" in out
+
+
+def test_tasks_update_without_fields_errors(svc):
+    ft, run = svc
+    run("tasks", "update", "t1", expect=1)
+    assert ft.calls == []
+
+
+def test_tasks_move_sends_query_params(svc):
+    ft, run = svc
+    ft.add("POST", "lists/@default/tasks/t1/move", {"id": "t1"})
+    out = run("tasks", "move", "t1", "--after", "t9", "--parent", "p1")
+    url = ft.calls[0]["url"]
+    assert "/lists/@default/tasks/t1/move" in url
+    assert "previous=t9" in url and "parent=p1" in url
+    assert "moved" in out and "t1" in out
+
+
+def test_tasks_clear_completed(svc):
+    ft, run = svc
+    ft.add("POST", "lists/tl9/clear", {})
+    out = run("tasks", "clear-completed", "--list", "tl9")
+    assert ft.calls[0]["url"].endswith("lists/tl9/clear")
+    assert "cleared completed tasks in" in out and "tl9" in out
