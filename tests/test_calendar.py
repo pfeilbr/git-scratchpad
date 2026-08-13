@@ -87,3 +87,77 @@ def test_events_list_other_calendar(cal):
     ft.add("GET", "calendars/team%40group.calendar.google.com/events",
            {"items": []})
     run("calendar", "events", "--calendar", "team@group.calendar.google.com")
+
+
+def test_update_sends_only_provided_fields(cal):
+    ft, run = cal
+    ft.add("PATCH", "events/e1", {"id": "e1"})
+    out = run("calendar", "update", "e1", "--summary", "New name",
+              "--start", "2026-01-05T10:00")
+    call = ft.calls[0]
+    assert call["method"] == "PATCH"
+    body = json.loads(call["data"])
+    assert body == {"summary": "New name",
+                    "start": {"dateTime": "2026-01-05T10:00:00"}}
+    assert "updated" in out and "e1" in out
+
+
+def test_update_with_no_fields_errors(cal):
+    ft, run = cal
+    run("calendar", "update", "e1", expect=1)
+    assert ft.calls == []
+
+
+def test_respond_flips_own_attendee_entry(cal):
+    ft, run = cal
+    ft.add("GET", "events/e1", {"id": "e1", "attendees": [
+        {"email": "b@x.com", "responseStatus": "accepted"},
+        {"email": "a@x.com", "self": True, "responseStatus": "needsAction"},
+    ]})
+    ft.add("PATCH", "events/e1", {"id": "e1"})
+    out = run("calendar", "respond", "e1", "--as", "declined")
+    body = json.loads(ft.calls[-1]["data"])
+    assert body == {"attendees": [
+        {"email": "b@x.com", "responseStatus": "accepted"},
+        {"email": "a@x.com", "self": True, "responseStatus": "declined"},
+    ]}
+    assert "declined" in out and "e1" in out
+
+
+def test_respond_errors_when_not_an_attendee(cal):
+    ft, run = cal
+    ft.add("GET", "events/e2", {"id": "e2", "attendees": [
+        {"email": "b@x.com", "responseStatus": "accepted"},
+    ]})
+    run("calendar", "respond", "e2", "--as", "accepted", expect=1)
+    assert all(c["method"] != "PATCH" for c in ft.calls)
+
+
+def test_freebusy_body_and_output(cal):
+    ft, run = cal
+    ft.add("POST", "freeBusy", {"calendars": {
+        "primary": {"busy": [
+            {"start": "2026-01-05T09:00:00Z", "end": "2026-01-05T09:30:00Z"},
+            {"start": "2026-01-05T13:00:00Z", "end": "2026-01-05T14:00:00Z"},
+        ]},
+        "team@x.com": {"busy": []},
+    }})
+    out = run("calendar", "freebusy", "--from", "2026-01-05",
+              "--to", "2026-01-06", "--calendars", "primary,team@x.com")
+    body = json.loads(ft.calls[0]["data"])
+    assert body == {"timeMin": "2026-01-05T00:00:00Z",
+                    "timeMax": "2026-01-06T00:00:00Z",
+                    "items": [{"id": "primary"}, {"id": "team@x.com"}]}
+    lines = [l for l in out.splitlines() if l.startswith("primary")]
+    assert len(lines) == 2
+    assert "2026-01-05T09:00:00Z" in lines[0]
+    assert "2026-01-05T09:30:00Z" in lines[0]
+    assert not [l for l in out.splitlines() if l.startswith("team@x.com")]
+
+
+def test_freebusy_defaults_to_primary(cal):
+    ft, run = cal
+    ft.add("POST", "freeBusy", {"calendars": {"primary": {"busy": []}}})
+    run("calendar", "freebusy", "--from", "2026-01-05", "--to", "2026-01-06")
+    body = json.loads(ft.calls[0]["data"])
+    assert body["items"] == [{"id": "primary"}]

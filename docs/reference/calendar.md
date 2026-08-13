@@ -82,6 +82,59 @@ usage: gsuite calendar get [-h] [--calendar CALENDAR] id
 | `--calendar CALENDAR` |  | `primary` | calendar id (default: primary) |
 | `id` | yes |  |  |
 
+### `gsuite calendar update`
+
+Update fields of an event.
+
+```text
+usage: gsuite calendar update [-h] [--calendar CALENDAR] [--summary SUMMARY]
+                              [--start START] [--end END]
+                              [--location LOCATION]
+                              [--description DESCRIPTION]
+                              id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--calendar CALENDAR` |  | `primary` | calendar id (default: primary) |
+| `id` | yes |  |  |
+| `--summary SUMMARY` |  |  |  |
+| `--start START` |  |  | YYYY-MM-DD (all-day) or YYYY-MM-DDTHH:MM |
+| `--end END` |  |  | YYYY-MM-DD (all-day) or YYYY-MM-DDTHH:MM |
+| `--location LOCATION` |  |  |  |
+| `--description DESCRIPTION` |  |  |  |
+
+### `gsuite calendar respond`
+
+Respond to an event invitation.
+
+```text
+usage: gsuite calendar respond [-h] [--calendar CALENDAR] --as
+                               {accepted,declined,tentative}
+                               id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--calendar CALENDAR` |  | `primary` | calendar id (default: primary) |
+| `id` | yes |  |  |
+| `--as {accepted,declined,tentative}` | yes |  | response status |
+
+### `gsuite calendar freebusy`
+
+Busy blocks per calendar in a window.
+
+```text
+usage: gsuite calendar freebusy [-h] --from WHEN --to WHEN
+                                [--calendars CALENDARS]
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--from WHEN` | yes |  | RFC3339 or YYYY-MM-DD lower bound |
+| `--to WHEN` | yes |  | RFC3339 or YYYY-MM-DD upper bound |
+| `--calendars CALENDARS` |  |  | comma-separated calendar ids (default: primary) |
+
 ### `gsuite calendar delete`
 
 Delete an event.

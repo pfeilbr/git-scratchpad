@@ -123,6 +123,57 @@ def cmd_delete(args) -> int:
     return 0
 
 
+def cmd_update(args) -> int:
+    body: dict = {}
+    for field in ("summary", "location", "description"):
+        value = getattr(args, field)
+        if value is not None:
+            body[field] = value
+    for field in ("start", "end"):
+        value = getattr(args, field)
+        if value is not None:
+            kind, point = _parse_point(value)
+            body[field] = {kind: point}
+    if not body:
+        raise CLIError("nothing to update (pass --summary, --start, --end, "
+                       "--location, or --description)")
+    Client.for_args(args).patch(_cal_url(args.calendar, f"/events/{args.id}"),
+                                json_body=body)
+    confirm("updated", args.id)
+    return 0
+
+
+def cmd_respond(args) -> int:
+    client = Client.for_args(args)
+    url = _cal_url(args.calendar, f"/events/{args.id}")
+    event = client.get(url)
+    attendees = event.get("attendees", [])
+    mine = next((a for a in attendees
+                 if a.get("self") or a.get("email") == client.email), None)
+    if mine is None:
+        raise CLIError(f"{client.email} is not an attendee of {args.id}")
+    mine["responseStatus"] = args.as_
+    client.patch(url, json_body={"attendees": attendees})
+    confirm("responded", args.as_, "to", event.get("id") or args.id)
+    return 0
+
+
+def cmd_freebusy(args) -> int:
+    calendars = [c.strip() for c in (args.calendars or "primary").split(",")
+                 if c.strip()]
+    body = {"timeMin": _to_rfc3339(getattr(args, "from")),
+            "timeMax": _to_rfc3339(args.to),
+            "items": [{"id": c} for c in calendars]}
+    result = Client.for_args(args).post(f"{BASE}/freeBusy", json_body=body)
+    rows = [{"calendar": cal_id, "from": block.get("start", ""),
+             "to": block.get("end", "")}
+            for cal_id, info in result.get("calendars", {}).items()
+            for block in info.get("busy", [])]
+    emit(args, rows, [("CALENDAR", "calendar"), ("BUSY-FROM", "from"),
+                      ("BUSY-TO", "to")])
+    return 0
+
+
 def register(subparsers) -> None:
     register_service(subparsers, "calendar", "calendars, events, agenda", [
         Cmd("calendars", cmd_calendars, "list calendars"),
@@ -141,5 +192,22 @@ def register(subparsers) -> None:
              arg("--end"), arg("--attendees", help="comma-separated emails"),
              arg("--description"), arg("--location"))),
         Cmd("get", cmd_get, "show one event", (CALENDAR_FLAG, arg("id"))),
+        Cmd("update", cmd_update, "update fields of an event",
+            (CALENDAR_FLAG, arg("id"), arg("--summary"),
+             arg("--start", help="YYYY-MM-DD (all-day) or YYYY-MM-DDTHH:MM"),
+             arg("--end", help="YYYY-MM-DD (all-day) or YYYY-MM-DDTHH:MM"),
+             arg("--location"), arg("--description"))),
+        Cmd("respond", cmd_respond, "respond to an event invitation",
+            (CALENDAR_FLAG, arg("id"),
+             arg("--as", dest="as_", required=True,
+                 choices=["accepted", "declined", "tentative"],
+                 help="response status"))),
+        Cmd("freebusy", cmd_freebusy, "busy blocks per calendar in a window",
+            (arg("--from", dest="from", metavar="WHEN", required=True,
+                 help="RFC3339 or YYYY-MM-DD lower bound"),
+             arg("--to", metavar="WHEN", required=True,
+                 help="RFC3339 or YYYY-MM-DD upper bound"),
+             arg("--calendars",
+                 help="comma-separated calendar ids (default: primary)"))),
         Cmd("delete", cmd_delete, "delete an event", (CALENDAR_FLAG, arg("id"))),
     ])
