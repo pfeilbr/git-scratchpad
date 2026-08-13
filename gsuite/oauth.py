@@ -217,14 +217,104 @@ def fetch_email(token: dict) -> str:
     return email
 
 
+# -- other credential sources: env token, Application Default Credentials -------
+
+ACCESS_TOKEN_ENV = "GSUITE_ACCESS_TOKEN"
+ADC_ENV = "GOOGLE_APPLICATION_CREDENTIALS"
+
+
+def env_access_token() -> str | None:
+    """A ready-made access token handed in by the environment, if any."""
+    return os.environ.get(ACCESS_TOKEN_ENV) or None
+
+
+def adc_path() -> str:
+    """Where Application Default Credentials live (gcloud's own convention)."""
+    return os.environ.get(ADC_ENV) or os.path.expanduser(
+        "~/.config/gcloud/application_default_credentials.json")
+
+
+def load_adc() -> dict | None:
+    """Parse the ADC file: an authorized_user dict, or None if there is none.
+
+    Service-account keys are recognised and rejected with an explanation:
+    signing their JWT assertion needs RS256, which is out of reach for a
+    zero-dependency (stdlib-only) tool.
+    """
+    path = adc_path()
+    try:
+        data = json.loads(open(path).read())
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        raise AuthError(f"cannot read ADC file {path}: {exc}") from exc
+    if data.get("type") == "service_account":
+        raise AuthError(
+            f"{path} is a service_account key — using one requires signing a "
+            "JWT with RS256, which gsuite does not support (it is "
+            "zero-dependency, stdlib only). Run `gsuite auth login`, or set "
+            f"{ACCESS_TOKEN_ENV} to a token minted elsewhere (e.g. "
+            "`gcloud auth print-access-token`)"
+        )
+    missing = [k for k in ("client_id", "client_secret", "refresh_token")
+               if not data.get(k)]
+    if missing:
+        raise AuthError(
+            f"{path} is not usable Application Default Credentials: missing "
+            f"{', '.join(missing)} (expected an authorized_user file from "
+            "`gcloud auth application-default login`)"
+        )
+    return data
+
+
+def _adc_access_token(adc: dict) -> dict:
+    """Mint an access token from ADC by reusing the ordinary refresh flow."""
+    token = refresh_access_token(
+        {"client_id": adc["client_id"], "client_secret": adc["client_secret"]},
+        {"refresh_token": adc["refresh_token"]},
+    )
+    # Remembering the origin keeps a cached ADC token renewable: it must be
+    # re-minted from ADC, not refreshed against this install's OAuth client.
+    token["source"] = "adc"
+    return token
+
+
+def credential_source(store: ConfigStore, email: str | None) -> str:
+    """Which credential the next API call would use (reported by `auth doctor`)."""
+    if env_access_token():
+        return f"{ACCESS_TOKEN_ENV} (env)"
+    if email and store.load_token(email) is not None:
+        return f"stored token ({email})"
+    try:
+        if load_adc() is not None:
+            return f"ADC ({adc_path()})"
+    except AuthError:
+        return "none (ADC present but unusable — see `gsuite auth adc`)"
+    return "none"
+
+
 # -- token access for API calls ------------------------------------------------
 
 def get_access_token(store: ConfigStore, email: str) -> str:
-    token = store.load_token(email)
-    if token is None:
+    """Resolve a bearer token: env var, then the stored token, then ADC."""
+    env_token = env_access_token()
+    if env_token:
+        return env_token
+    token = store.load_token(email) if email else None
+    if token is not None:
+        if token.get("expiry", 0) - REFRESH_SLACK_SECONDS > time.time():
+            return token["access_token"]
+        if token.get("source") != "adc":  # an ADC token is re-minted below
+            new = refresh_access_token(get_client(store), token)
+            store.save_token(email, new)
+            return new["access_token"]
+    adc = load_adc()
+    if adc is not None:
+        new = _adc_access_token(adc)
+        if email:  # cache it like any other token for this account
+            store.save_token(email, new)
+        return new["access_token"]
+    if email:
         raise AuthError(f"no credentials for {email} — run `gsuite auth login {email}`")
-    if token.get("expiry", 0) - REFRESH_SLACK_SECONDS > time.time():
-        return token["access_token"]
-    new = refresh_access_token(get_client(store), token)
-    store.save_token(email, new)
-    return new["access_token"]
+    raise AuthError(
+        f"no credentials — run `gsuite auth login` or set {ACCESS_TOKEN_ENV}")

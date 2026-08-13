@@ -184,3 +184,138 @@ def test_auth_doctor_ok(store, run_cli):
                                  "expiry": time.time() + 999})
     out = run_cli("auth", "doctor")
     assert "FAIL" not in out
+
+
+# -- other credential sources: $GSUITE_ACCESS_TOKEN and ADC -------------------
+
+ADC_USER = {"type": "authorized_user", "client_id": "adc-cid",
+            "client_secret": "adc-sec", "refresh_token": "adc-ref"}
+ADC_SERVICE_ACCOUNT = {"type": "service_account",
+                       "client_email": "svc@p.iam.gserviceaccount.com",
+                       "private_key": "-----BEGIN PRIVATE KEY-----"}
+
+
+@pytest.fixture(autouse=True)
+def no_ambient_credentials(tmp_path, monkeypatch):
+    """Never inherit a real access token or the developer's own ADC file."""
+    monkeypatch.delenv("GSUITE_ACCESS_TOKEN", raising=False)
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS",
+                       str(tmp_path / "absent-adc.json"))
+
+
+def write_adc(tmp_path, monkeypatch, payload) -> str:
+    path = tmp_path / "adc.json"
+    path.write_text(json.dumps(payload))
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(path))
+    return str(path)
+
+
+def test_env_access_token_short_circuits_everything(store, fake_transport,
+                                                    monkeypatch):
+    monkeypatch.setenv("GSUITE_ACCESS_TOKEN", "env-tok")
+    # No stored token for this address, and no refresh may be attempted.
+    assert oauth.get_access_token(store, "nobody@x.com") == "env-tok"
+    assert fake_transport.calls == []
+
+
+def test_read_command_runs_with_only_the_env_token(config_dir, fake_transport,
+                                                   monkeypatch, run_cli):
+    monkeypatch.setenv("GSUITE_ACCESS_TOKEN", "env-tok")
+    fake_transport.add("GET", "tasks.googleapis.com",
+                       {"items": [{"id": "t1", "title": "Ship it"}]})
+    out = run_cli("tasks", "lists")  # config dir is empty: no accounts at all
+    assert "Ship it" in out
+    assert fake_transport.calls[0]["headers"]["Authorization"] == "Bearer env-tok"
+
+
+def test_adc_path_honors_google_application_credentials(tmp_path, monkeypatch):
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(tmp_path / "c.json"))
+    assert oauth.adc_path() == str(tmp_path / "c.json")
+
+
+def test_adc_path_defaults_to_gcloud_location(monkeypatch):
+    monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
+    assert oauth.adc_path().endswith(
+        "gcloud/application_default_credentials.json")
+
+
+def test_load_adc_returns_none_when_file_absent(tmp_path, monkeypatch):
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(tmp_path / "no.json"))
+    assert oauth.load_adc() is None
+
+
+def test_load_adc_returns_authorized_user_credentials(tmp_path, monkeypatch):
+    write_adc(tmp_path, monkeypatch, ADC_USER)
+    assert oauth.load_adc()["refresh_token"] == "adc-ref"
+
+
+def test_load_adc_service_account_raises_unsupported(tmp_path, monkeypatch):
+    write_adc(tmp_path, monkeypatch, ADC_SERVICE_ACCOUNT)
+    with pytest.raises(AuthError, match="RS256"):
+        oauth.load_adc()
+
+
+def test_get_access_token_falls_back_to_adc(store, fake_transport, tmp_path,
+                                            monkeypatch):
+    write_adc(tmp_path, monkeypatch, ADC_USER)
+    store.add_account("a@x.com")  # account exists, but no stored token
+    fake_transport.add("POST", "oauth2.googleapis.com/token",
+                       {"access_token": "adc-tok", "expires_in": 3600})
+    assert oauth.get_access_token(store, "a@x.com") == "adc-tok"
+    body = fake_transport.calls[0]["data"].decode()
+    assert "client_id=adc-cid" in body
+    assert "refresh_token=adc-ref" in body
+    assert store.load_token("a@x.com")["access_token"] == "adc-tok"
+
+
+def test_auth_adc_missing_exits_one(config_dir, tmp_path, monkeypatch, run_cli):
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(tmp_path / "no.json"))
+    out = run_cli("auth", "adc", expect=1)
+    assert "missing" in out
+
+
+def test_auth_adc_authorized_user_exits_zero(config_dir, tmp_path, monkeypatch,
+                                             run_cli):
+    path = write_adc(tmp_path, monkeypatch, ADC_USER)
+    out = run_cli("auth", "adc")
+    assert path in out
+    assert "authorized_user" in out
+
+
+def test_auth_adc_service_account_exits_one(config_dir, tmp_path, monkeypatch,
+                                            run_cli):
+    write_adc(tmp_path, monkeypatch, ADC_SERVICE_ACCOUNT)
+    out = run_cli("auth", "adc", expect=1)
+    assert "service_account" in out
+
+
+def test_login_services_all_authorizes_every_service(store, fake_transport,
+                                                     monkeypatch, run_cli):
+    seen = {}
+
+    def authorizer(client, scopes):
+        seen["scopes"] = scopes
+        return "auth-code-123", "http://127.0.0.1:9999/"
+
+    monkeypatch.setattr(oauth, "loopback_authorizer", authorizer)
+    add_token_route(fake_transport)
+    run_cli("auth", "login", "me@x.com", "--services", "all")
+    assert seen["scopes"] == oauth.scopes_for(sorted(oauth.SERVICE_SCOPES))
+    assert store.list_accounts()[0]["services"] == sorted(oauth.SERVICE_SCOPES)
+
+
+def test_auth_doctor_reports_env_credential_source(config_dir, monkeypatch,
+                                                   run_cli):
+    monkeypatch.setenv("GSUITE_ACCESS_TOKEN", "env-tok")
+    out = run_cli("auth", "doctor", expect=1)  # still no client/account
+    assert "credential source" in out
+    assert "GSUITE_ACCESS_TOKEN" in out
+
+
+def test_auth_doctor_reports_adc_credential_source(store, tmp_path, monkeypatch,
+                                                   run_cli):
+    write_adc(tmp_path, monkeypatch, ADC_USER)
+    store.add_account("a@x.com")
+    out = run_cli("auth", "doctor", expect=1)  # token missing, ADC carries it
+    assert "credential source" in out
+    assert "ADC" in out

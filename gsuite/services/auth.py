@@ -18,10 +18,19 @@ def _token_state(token: dict | None) -> str:
     return "expired" if token.get("refresh_token") else "stale"
 
 
+def _requested_services(spec: str | None) -> list[str]:
+    """`--services` as a service list; the literal `all` means every service."""
+    if not spec:
+        return list(oauth.DEFAULT_SERVICES)
+    names = [s.strip() for s in spec.split(",") if s.strip()]
+    if "all" in names:
+        return sorted(oauth.SERVICE_SCOPES)
+    return names
+
+
 def cmd_login(args) -> int:
     store = ConfigStore()
-    services = ([s.strip() for s in args.services.split(",") if s.strip()]
-                if args.services else list(oauth.DEFAULT_SERVICES))
+    services = _requested_services(args.services)
     scopes = oauth.scopes_for(services)
     client = oauth.get_client(store)
     token = oauth.login_flow(client, scopes)
@@ -110,6 +119,24 @@ def cmd_token(args) -> int:
     return 0
 
 
+def cmd_adc(args) -> int:
+    """Report on Application Default Credentials: path, existence, type."""
+    path = oauth.adc_path()
+    print(f"path: {path}")
+    try:
+        adc = oauth.load_adc()
+    except CLIError as exc:
+        kind = "service_account" if "service_account" in str(exc) else "unusable"
+        print(f"exists: yes\ntype: {kind}\nusable: no — {exc}")
+        return 1
+    if adc is None:
+        print("exists: no\ntype: missing\nusable: no — run "
+              "`gcloud auth application-default login`")
+        return 1
+    print("exists: yes\ntype: authorized_user\nusable: yes")
+    return 0
+
+
 def cmd_doctor(args) -> int:
     store = ConfigStore()
     problems = 0
@@ -136,6 +163,9 @@ def cmd_doctor(args) -> int:
         state = _token_state(store.load_token(acct["email"]))
         check(state in ("valid", "expired"), f"token usable: {acct['email']}",
               f"state={state}; run `gsuite auth login {acct['email']}`")
+    source = oauth.credential_source(store, store.default_account())
+    check(not source.startswith("none"), f"credential source: {source}",
+          "run `gsuite auth login`, set GSUITE_ACCESS_TOKEN, or configure ADC")
     return 1 if problems else 0
 
 
@@ -144,7 +174,8 @@ def register(subparsers) -> None:
         Cmd("login", cmd_login, "sign in via browser (loopback OAuth)",
             (arg("email", nargs="?",
                  help="account email (auto-detected if omitted)"),
-             arg("--services", help="comma-separated services to authorize "
+             arg("--services", help="comma-separated services to authorize, "
+                 "or `all` for every service "
                  f"(default: {','.join(oauth.DEFAULT_SERVICES)})"))),
         Cmd("logout", cmd_logout, "remove an account and its token",
             (arg("email"),)),
@@ -161,5 +192,6 @@ def register(subparsers) -> None:
                 "store a Desktop-app OAuth client JSON", (arg("file"),)),
         )),
         Cmd("token", cmd_token, "print a fresh access token (for scripts)"),
+        Cmd("adc", cmd_adc, "show Application Default Credentials status"),
         Cmd("doctor", cmd_doctor, "diagnose auth setup"),
     ])

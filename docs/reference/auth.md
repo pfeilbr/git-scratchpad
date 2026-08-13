@@ -21,7 +21,7 @@ usage: gsuite auth login [-h] [--services SERVICES] [email]
 | Argument | Required | Default | Description |
 | --- | --- | --- | --- |
 | `email` |  |  | account email (auto-detected if omitted) |
-| `--services SERVICES` |  |  | comma-separated services to authorize (default: gmail,calendar,drive,contacts) |
+| `--services SERVICES` |  |  | comma-separated services to authorize, or `all` for every service (default: gmail,calendar,drive,contacts) |
 
 ### `gsuite auth logout`
 
@@ -116,6 +116,14 @@ Print a fresh access token (for scripts).
 
 ```text
 usage: gsuite auth token [-h]
+```
+
+### `gsuite auth adc`
+
+Show Application Default Credentials status.
+
+```text
+usage: gsuite auth adc [-h]
 ```
 
 ### `gsuite auth doctor`
