@@ -6,7 +6,7 @@ List, search, create contacts.
 usage: gsuite contacts [-h] <command> ...
 ```
 
-Global flags `-a/--account <email|alias>` and `--json` go *before* the service name.
+Global flags go *before* the service name: `-a/--account ACCOUNT`, `--json`, `--readonly`, `--csv`, `--fields FIELDS`, `--debug`.
 
 ## Commands
 

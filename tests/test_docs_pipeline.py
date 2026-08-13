@@ -130,3 +130,19 @@ def test_index_page_mentions_every_service():
     page = _read("docs/index.md")
     for service in SERVICE_MODULES:
         assert service in page, f"docs/index.md never mentions: {service}"
+
+
+def test_reference_pages_list_every_global_flag():
+    """The generated pages must name the real root flags, not a stale subset."""
+    import argparse
+
+    from gsuite.cli import build_parser
+
+    page = _read("docs/reference/gmail.md")
+    for action in build_parser()._actions:
+        if isinstance(action, (argparse._HelpAction,
+                               argparse._VersionAction,
+                               argparse._SubParsersAction)):
+            continue
+        flag = action.option_strings[-1]
+        assert flag in page, f"reference pages never mention global flag {flag}"

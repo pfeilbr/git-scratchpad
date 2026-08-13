@@ -262,13 +262,26 @@ def _render_command(lines: list[str], prefix: str, name: str, parser,
                         helps.get(child_name, ""), depth + 1)
 
 
+def _global_flags() -> str:
+    """The root parser's own flags, so this sentence cannot go stale."""
+    parts = []
+    for action in build_parser()._actions:
+        if isinstance(action, (argparse._HelpAction, argparse._VersionAction,
+                               argparse._SubParsersAction)):
+            continue
+        flags = "/".join(action.option_strings)
+        metavar = "" if action.nargs == 0 else f" {action.dest.upper()}"
+        parts.append(f"`{flags}{metavar}`")
+    return ", ".join(parts)
+
+
 def render_service(name: str, parser, help_text: str) -> str:
     lines = [f"# gsuite {name}", ""]
     if help_text:
         lines += [f"{_sentence(help_text)}.", ""]
     lines += ["```text", parser.format_usage().strip(), "```", "",
-              "Global flags `-a/--account <email|alias>` and `--json` go "
-              "*before* the service name.", "", "## Commands", ""]
+              f"Global flags go *before* the service name: {_global_flags()}.",
+              "", "## Commands", ""]
     sub = _sub_action(parser)
     helps = {ca.dest: ca.help or "" for ca in sub._choices_actions}
     for child_name, child_parser in sub.choices.items():

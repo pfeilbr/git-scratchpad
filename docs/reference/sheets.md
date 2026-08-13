@@ -6,7 +6,7 @@ Spreadsheets: read/append/update.
 usage: gsuite sheets [-h] <command> ...
 ```
 
-Global flags `-a/--account <email|alias>` and `--json` go *before* the service name.
+Global flags go *before* the service name: `-a/--account ACCOUNT`, `--json`, `--readonly`, `--csv`, `--fields FIELDS`, `--debug`.
 
 ## Commands
 
