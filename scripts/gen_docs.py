@@ -145,6 +145,17 @@ EXAMPLES: dict[str, list[tuple[str, str, str]]] = {
          "r9a1  2026-01-05T10:00:00Z\n"
          "r9a2  2026-01-06T11:30:00Z"),
     ],
+    "meet": [
+        ("Create a space and share the link",
+         "gsuite meet create --access TRUSTED",
+         "created spaces/abc-defg-hij https://meet.google.com/abc-defg-hij"),
+        ("Who attended the last conference?",
+         "gsuite meet conferences --max 1\n"
+         "gsuite meet participants conferenceRecords/c1",
+         "NAME                                 USER           JOINED\n"
+         "conferenceRecords/c1/participants/p1 Ada Lovelace   "
+         "2026-01-05T10:00:00Z"),
+    ],
     "api": [
         ("Call any endpoint (no dedicated command needed)",
          "gsuite api call GET drive/v3/about --param fields=user",

@@ -114,6 +114,10 @@ tables and worked examples.
 ### `gsuite forms`
 `create --title` · `get <id>` · `questions <id>` · `responses <id> [--max]`
 
+### `gsuite meet`
+`create [--access]` · `get <space>` · `end <space>` · `conferences [--max]` ·
+`participants <record> [--max]`
+
 ### `gsuite api`
 The escape hatch — every Google API method is reachable even without a
 hand-crafted command:
