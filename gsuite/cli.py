@@ -12,7 +12,8 @@ from gsuite.errors import CLIError
 # grows service by service (red-green, one increment per service).
 SERVICE_MODULES: list[str] = ["auth", "gmail", "calendar", "drive", "docs",
                               "sheets", "slides", "contacts", "tasks",
-                              "chat", "keep", "admin", "forms", "meet", "api"]
+                              "chat", "keep", "admin", "forms", "meet", "api",
+                              "completion"]
 
 
 def build_parser() -> argparse.ArgumentParser:
