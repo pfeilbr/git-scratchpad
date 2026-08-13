@@ -20,3 +20,13 @@ jobs:
         run: pip install pytest
       - name: Run the deterministic gate (compile + tests + docs sync)
         run: python3 scripts/verify.py
+
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: End-to-end smoke test of the installed artifact
+        run: python3 scripts/smoke.py

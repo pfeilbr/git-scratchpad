@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import os
 import sys
 
 import gsuite.transport
@@ -75,6 +76,12 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("interrupted", file=sys.stderr)
         return 130
+    except BrokenPipeError:
+        # A downstream reader closed the pipe (`gsuite … | head`). Behave
+        # like a UNIX filter: point stdout at devnull so the interpreter's
+        # exit-time flush cannot raise again, and use the shell's 128+SIGPIPE.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        return 141
 
 
 def entrypoint() -> None:
