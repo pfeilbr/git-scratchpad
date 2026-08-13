@@ -76,6 +76,44 @@ usage: gsuite sheets clear [-h] id range
 | `id` | yes |  |  |
 | `range` | yes |  | A1 notation, e.g. Sheet1!A1:B10 |
 
+### `gsuite sheets tabs`
+
+List tabs (sheets) in a spreadsheet.
+
+```text
+usage: gsuite sheets tabs [-h] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+
+### `gsuite sheets add-tab`
+
+Add a tab.
+
+```text
+usage: gsuite sheets add-tab [-h] --title TITLE id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+| `--title TITLE` | yes |  |  |
+
+### `gsuite sheets rm-tab`
+
+Remove a tab.
+
+```text
+usage: gsuite sheets rm-tab [-h] --tab TAB id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+| `--tab TAB` | yes |  | numeric sheet id (see `sheets tabs`) |
+
 ## Examples
 
 **Append rows, then read a range**
