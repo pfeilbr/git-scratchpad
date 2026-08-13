@@ -47,6 +47,44 @@ usage: gsuite keep create [-h] [--title TITLE] --text TEXT
 | `--title TITLE` |  |  |  |
 | `--text TEXT` | yes |  |  |
 
+### `gsuite keep rm`
+
+Delete a note.
+
+```text
+usage: gsuite keep rm [-h] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+
+### `gsuite keep share`
+
+Grant an email write access to a note.
+
+```text
+usage: gsuite keep share [-h] id email
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+| `email` | yes |  |  |
+
+### `gsuite keep unshare`
+
+Revoke an email's access to a note.
+
+```text
+usage: gsuite keep unshare [-h] id email
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+| `email` | yes |  |  |
+
 ## Examples
 
 **Capture a note**
