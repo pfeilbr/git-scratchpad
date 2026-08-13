@@ -33,6 +33,56 @@ def test_chat_messages(svc):
     assert "hi" in run("chat", "messages", "spaces/A")
 
 
+def test_chat_create_space(svc):
+    ft, run = svc
+    ft.add("POST", "chat.googleapis.com/v1/spaces", {"name": "spaces/B"})
+    out = run("chat", "create-space", "--name", "War room")
+    assert json.loads(ft.calls[0]["data"]) == {
+        "displayName": "War room", "spaceType": "SPACE"}
+    assert "created spaces/B" in out
+    ft.add("POST", "chat.googleapis.com/v1/spaces", {"name": "spaces/C"})
+    run("chat", "create-space", "--name", "Chatter", "--type", "GROUP_CHAT")
+    assert json.loads(ft.calls[-1]["data"]) == {
+        "displayName": "Chatter", "spaceType": "GROUP_CHAT"}
+
+
+def test_chat_members(svc):
+    ft, run = svc
+    ft.add("GET", "spaces/A/members", {"memberships": [
+        {"name": "spaces/A/members/1",
+         "member": {"name": "users/7", "type": "HUMAN"},
+         "role": "ROLE_MEMBER"}]})
+    out = run("chat", "members", "spaces/A")
+    assert "NAME" in out and "MEMBER" in out and "TYPE" in out and "ROLE" in out
+    assert "spaces/A/members/1" in out and "users/7" in out
+    assert "HUMAN" in out and "ROLE_MEMBER" in out
+
+
+def test_chat_add_member_normalizes_user(svc):
+    ft, run = svc
+    ft.add("POST", "spaces/A/members", {})
+    out = run("chat", "add-member", "spaces/A", "u123")
+    assert json.loads(ft.calls[0]["data"]) == {
+        "member": {"name": "users/u123", "type": "HUMAN"}}
+    assert "added users/u123 to spaces/A" in out
+    ft.add("POST", "spaces/A/members", {})
+    run("chat", "add-member", "spaces/A", "users/u123")
+    assert json.loads(ft.calls[-1]["data"]) == {
+        "member": {"name": "users/u123", "type": "HUMAN"}}
+
+
+def test_chat_reply_threaded(svc):
+    ft, run = svc
+    ft.add("POST", "spaces/A/messages", {"name": "spaces/A/messages/9"})
+    out = run("chat", "reply", "spaces/A",
+              "--thread", "spaces/A/threads/T", "--text", "on it")
+    assert "messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD" \
+        in ft.calls[0]["url"]
+    assert json.loads(ft.calls[0]["data"]) == {
+        "text": "on it", "thread": {"name": "spaces/A/threads/T"}}
+    assert "sent spaces/A/messages/9" in out
+
+
 # -- keep ---------------------------------------------------------------------
 
 def test_keep_list(svc):
