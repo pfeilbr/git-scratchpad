@@ -49,5 +49,6 @@ nav:
       - keep: reference/keep.md
       - admin: reference/admin.md
       - forms: reference/forms.md
+      - meet: reference/meet.md
       - api: reference/api.md
   - Development: development.md
