@@ -8,6 +8,7 @@ import json
 import mimetypes
 import os
 from email.message import EmailMessage
+from typing import Sequence
 
 from gsuite.api import Client, quote_id
 from gsuite.cmdreg import Cmd, Group, arg, max_flag, register_service
@@ -216,6 +217,41 @@ def cmd_trash(args) -> int:
     return 0
 
 
+def cmd_untrash(args) -> int:
+    Client.for_args(args).post(f"{BASE}/messages/{args.id}/untrash")
+    confirm("untrashed", args.id)
+    return 0
+
+
+def _system_label_cmd(verb: str, add: Sequence[str] = (),
+                      remove: Sequence[str] = ()):
+    """Build a handler that flips fixed system labels on one message.
+
+    The triage verbs (archive, read/unread, spam) all differ only in which
+    system label ids they add or remove and in how they say so afterwards.
+    System ids are literal, so no name lookup is needed.
+    """
+    def handler(args) -> int:
+        body: dict = {}
+        if add:
+            body["addLabelIds"] = list(add)
+        if remove:
+            body["removeLabelIds"] = list(remove)
+        Client.for_args(args).post(f"{BASE}/messages/{args.id}/modify",
+                                   json_body=body)
+        confirm(verb, args.id)
+        return 0
+    return handler
+
+
+cmd_archive = _system_label_cmd("archived", remove=("INBOX",))
+cmd_unarchive = _system_label_cmd("moved to inbox", add=("INBOX",))
+cmd_mark_read = _system_label_cmd("marked read", remove=("UNREAD",))
+cmd_mark_unread = _system_label_cmd("marked unread", add=("UNREAD",))
+cmd_spam = _system_label_cmd("marked spam", add=("SPAM",), remove=("INBOX",))
+cmd_unspam = _system_label_cmd("unmarked spam", add=("INBOX",), remove=("SPAM",))
+
+
 def _label_id(client: Client, name: str) -> str:
     labels = client.get(f"{BASE}/labels").get("labels", [])
     for label in labels:
@@ -398,7 +434,18 @@ def register(subparsers) -> None:
             (arg("id"), arg("--body", required=True))),
         Cmd("forward", cmd_forward, "forward a message",
             (arg("id"), arg("--to", required=True), arg("--body", default=""))),
+        Cmd("archive", cmd_archive, "remove a message from the inbox",
+            (arg("id"),)),
+        Cmd("unarchive", cmd_unarchive, "move a message back to the inbox",
+            (arg("id"),)),
+        Cmd("mark-read", cmd_mark_read, "mark a message read", (arg("id"),)),
+        Cmd("mark-unread", cmd_mark_unread, "mark a message unread",
+            (arg("id"),)),
+        Cmd("spam", cmd_spam, "mark a message as spam", (arg("id"),)),
+        Cmd("unspam", cmd_unspam, "take a message out of spam", (arg("id"),)),
         Cmd("trash", cmd_trash, "move a message to trash", (arg("id"),)),
+        Cmd("untrash", cmd_untrash, "restore a message from trash",
+            (arg("id"),)),
         Group("labels", "manage labels", (
             Cmd("list", cmd_labels_list),
             Cmd("create", cmd_labels_create, args=(arg("name"),)),

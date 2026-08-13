@@ -394,3 +394,58 @@ def test_batch_modify_requires_label_flag(gmail):
     ft, run = gmail
     run("gmail", "batch-modify", "--query", "from:spam", expect=1)
     assert ft.calls == []
+
+
+@pytest.mark.parametrize("command, body, expected", [
+    ("archive", {"removeLabelIds": ["INBOX"]}, "archived m1"),
+    ("unarchive", {"addLabelIds": ["INBOX"]}, "moved to inbox m1"),
+])
+def test_archive_and_unarchive(gmail, command, body, expected):
+    ft, run = gmail
+    ft.add("POST", "messages/m1/modify", {"id": "m1"})
+    out = run("gmail", command, "m1")
+    assert json.loads(ft.calls[-1]["data"]) == body
+    assert expected in out
+
+
+@pytest.mark.parametrize("command, body, expected", [
+    ("mark-read", {"removeLabelIds": ["UNREAD"]}, "marked read m1"),
+    ("mark-unread", {"addLabelIds": ["UNREAD"]}, "marked unread m1"),
+])
+def test_mark_read_and_unread(gmail, command, body, expected):
+    ft, run = gmail
+    ft.add("POST", "messages/m1/modify", {"id": "m1"})
+    out = run("gmail", command, "m1")
+    assert json.loads(ft.calls[-1]["data"]) == body
+    assert expected in out
+
+
+@pytest.mark.parametrize("command, body, expected", [
+    ("spam", {"addLabelIds": ["SPAM"], "removeLabelIds": ["INBOX"]},
+     "marked spam m1"),
+    ("unspam", {"addLabelIds": ["INBOX"], "removeLabelIds": ["SPAM"]},
+     "unmarked spam m1"),
+])
+def test_spam_and_unspam_swap_inbox_and_spam(gmail, command, body, expected):
+    ft, run = gmail
+    ft.add("POST", "messages/m1/modify", {"id": "m1"})
+    out = run("gmail", command, "m1")
+    assert json.loads(ft.calls[-1]["data"]) == body
+    assert expected in out
+
+
+def test_untrash_posts_to_untrash_endpoint_without_body(gmail):
+    ft, run = gmail
+    ft.add("POST", "messages/m1/untrash", {"id": "m1"})
+    out = run("gmail", "untrash", "m1")
+    assert ft.calls[-1]["url"].endswith("/messages/m1/untrash")
+    assert not ft.calls[-1]["data"]
+    assert "untrashed m1" in out
+
+
+def test_archive_uses_literal_label_without_lookup(gmail):
+    """System label ids are literal, so there is no GET /labels round-trip."""
+    ft, run = gmail
+    ft.add("POST", "messages/m1/modify", {"id": "m1"})
+    run("gmail", "archive", "m1")
+    assert len(ft.calls) == 1
