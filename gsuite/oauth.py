@@ -50,6 +50,8 @@ SERVICE_SCOPES: dict[str, list[str]] = {
         "https://www.googleapis.com/auth/meetings.space.created",
         "https://www.googleapis.com/auth/meetings.space.readonly",
     ],
+    "searchconsole": ["https://www.googleapis.com/auth/webmasters.readonly"],
+    "analytics": ["https://www.googleapis.com/auth/analytics.readonly"],
 }
 IDENTITY_SCOPES = ["https://www.googleapis.com/auth/userinfo.email"]
 DEFAULT_SERVICES = ["gmail", "calendar", "drive", "contacts"]

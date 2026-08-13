@@ -50,6 +50,8 @@ nav:
       - admin: reference/admin.md
       - forms: reference/forms.md
       - meet: reference/meet.md
+      - searchconsole: reference/searchconsole.md
+      - analytics: reference/analytics.md
       - api: reference/api.md
       - completion: reference/completion.md
   - Development: development.md

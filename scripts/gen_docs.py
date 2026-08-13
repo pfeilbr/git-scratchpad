@@ -161,6 +161,30 @@ EXAMPLES: dict[str, list[tuple[str, str, str]]] = {
          "conferenceRecords/c1/participants/p1 Ada Lovelace   "
          "2026-01-05T10:00:00Z"),
     ],
+    "searchconsole": [
+        ("Top queries for a site last month",
+         "gsuite searchconsole query https://example.com/ "
+         "--from 2026-01-01 --to 2026-01-31 --dimensions query --max 3",
+         "KEYS            CLICKS  IMPRESSIONS  CTR    POSITION\n"
+         "gsuite cli      120     3400         0.035  4.2"),
+        ("Why isn't this page indexed?",
+         "gsuite searchconsole inspect https://example.com/ "
+         "https://example.com/new-post",
+         "verdict: PASS\ncoverage: Submitted and indexed\n"
+         "lastCrawl: 2026-01-05T10:00:00Z\nrobots: ALLOWED"),
+    ],
+    "analytics": [
+        ("Traffic by country over a date range",
+         "gsuite analytics report properties/123 --from 2026-01-01 "
+         "--to 2026-01-31 --metrics activeUsers,sessions --dimensions country",
+         "COUNTRY        ACTIVEUSERS  SESSIONS\n"
+         "United States  412          530"),
+        ("Who's on the site right now?",
+         "gsuite analytics properties\n"
+         "gsuite analytics realtime 123 --dimensions country",
+         "COUNTRY  ACTIVEUSERS\n"
+         "Japan    5"),
+    ],
     "api": [
         ("Call any endpoint (no dedicated command needed)",
          "gsuite api call GET drive/v3/about --param fields=user",
