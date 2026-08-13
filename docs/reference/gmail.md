@@ -186,6 +186,108 @@ usage: gsuite gmail drafts create [-h] --to TO [--subject SUBJECT]
 | `--bcc BCC` |  |  |  |
 | `--attach FILE` |  |  | attach a file (repeatable) |
 
+### `gsuite gmail vacation`
+
+Auto-reply (vacation responder) settings.
+
+#### `gsuite gmail vacation show`
+
+```text
+usage: gsuite gmail vacation show [-h]
+```
+
+#### `gsuite gmail vacation set`
+
+```text
+usage: gsuite gmail vacation set [-h] --subject SUBJECT --body BODY
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--subject SUBJECT` | yes |  |  |
+| `--body BODY` | yes |  |  |
+
+#### `gsuite gmail vacation off`
+
+```text
+usage: gsuite gmail vacation off [-h]
+```
+
+### `gsuite gmail signature`
+
+Send-as signatures.
+
+#### `gsuite gmail signature show`
+
+```text
+usage: gsuite gmail signature show [-h] [--send-as EMAIL]
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--send-as EMAIL` |  |  | send-as address (default: primary) |
+
+#### `gsuite gmail signature set`
+
+```text
+usage: gsuite gmail signature set [-h] --html HTML [--send-as EMAIL]
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--html HTML` | yes |  |  |
+| `--send-as EMAIL` |  |  | send-as address (default: primary) |
+
+### `gsuite gmail filters`
+
+Manage filters.
+
+#### `gsuite gmail filters list`
+
+```text
+usage: gsuite gmail filters list [-h]
+```
+
+#### `gsuite gmail filters create`
+
+```text
+usage: gsuite gmail filters create [-h] [--from FROM] [--query QUERY]
+                                   [--add-label NAME] [--delete]
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--from FROM` |  |  | match sender |
+| `--query QUERY` |  |  | match a Gmail search query |
+| `--add-label NAME` |  |  | apply this label to matches |
+| `--delete` |  |  | send matches to trash |
+
+#### `gsuite gmail filters rm`
+
+```text
+usage: gsuite gmail filters rm [-h] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+
+### `gsuite gmail batch-modify`
+
+Add/remove a label across all query matches.
+
+```text
+usage: gsuite gmail batch-modify [-h] --query QUERY [--add-label NAME]
+                                 [--remove-label NAME] [--max MAX]
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--query QUERY` | yes |  |  |
+| `--add-label NAME` |  |  |  |
+| `--remove-label NAME` |  |  |  |
+| `--max MAX` |  | `500` | maximum results (default: 500) |
+
 ## Examples
 
 **Find unread mail from a sender**

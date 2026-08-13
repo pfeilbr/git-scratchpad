@@ -270,3 +270,127 @@ def test_drafts_create_with_attachment(gmail, tmp_path):
     assert names == ["notes.txt"]
     atts = {p.get_filename(): p for p in mime.walk() if p.get_filename()}
     assert atts["notes.txt"].get_payload(decode=True) == b"draft attachment"
+
+
+def test_vacation_show(gmail):
+    ft, run = gmail
+    ft.add("GET", "settings/vacation", {"enableAutoReply": True,
+                                        "responseSubject": "OOO",
+                                        "responseBodyPlainText": "back soon"})
+    out = run("gmail", "vacation", "show")
+    assert "settings/vacation" in ft.calls[0]["url"]
+    assert "enabled: True" in out
+    assert "subject: OOO" in out
+    assert "body: back soon" in out
+
+
+def test_vacation_set_and_off(gmail):
+    ft, run = gmail
+    ft.add("PUT", "settings/vacation", {"enableAutoReply": True})
+    out = run("gmail", "vacation", "set", "--subject", "OOO",
+              "--body", "back soon")
+    assert ft.calls[-1]["method"] == "PUT"
+    assert json.loads(ft.calls[-1]["data"]) == {
+        "enableAutoReply": True,
+        "responseSubject": "OOO",
+        "responseBodyPlainText": "back soon",
+    }
+    assert "vacation responder enabled" in out
+    ft.add("PUT", "settings/vacation", {"enableAutoReply": False})
+    out = run("gmail", "vacation", "off")
+    assert json.loads(ft.calls[-1]["data"]) == {"enableAutoReply": False}
+    assert "vacation responder disabled" in out
+
+
+SEND_AS = {"sendAs": [
+    {"sendAsEmail": "alias@x.com", "signature": "alias sig"},
+    {"sendAsEmail": "a@x.com", "isPrimary": True, "signature": "primary sig"},
+]}
+
+
+def test_signature_show_falls_back_to_primary(gmail):
+    ft, run = gmail
+    ft.add("GET", "settings/sendAs", SEND_AS)
+    out = run("gmail", "signature", "show")
+    assert "primary sig" in out
+    assert "alias sig" not in out
+    ft.add("GET", "settings/sendAs", SEND_AS)
+    out = run("gmail", "signature", "show", "--send-as", "alias@x.com")
+    assert "alias sig" in out
+
+
+def test_signature_set_patches_send_as(gmail):
+    ft, run = gmail
+    ft.add("GET", "settings/sendAs", SEND_AS)
+    ft.add("PATCH", "settings/sendAs/", {})
+    out = run("gmail", "signature", "set", "--html", "<b>sig</b>",
+              "--send-as", "alias@x.com")
+    assert ft.calls[-1]["method"] == "PATCH"
+    assert "settings/sendAs/alias%40x.com" in ft.calls[-1]["url"]
+    assert json.loads(ft.calls[-1]["data"]) == {"signature": "<b>sig</b>"}
+    assert "signature updated for alias@x.com" in out
+
+
+def test_filters_list_and_rm(gmail):
+    ft, run = gmail
+    ft.add("GET", "settings/filters", {"filter": [
+        {"id": "f1",
+         "criteria": {"from": "spam@x.com", "query": "unsubscribe"},
+         "action": {"addLabelIds": ["L1", "L2"], "removeLabelIds": ["INBOX"]}},
+    ]})
+    out = run("gmail", "filters", "list")
+    assert "ID" in out and "FROM" in out and "QUERY" in out
+    assert "ADD" in out and "REMOVE" in out
+    assert "f1" in out and "spam@x.com" in out and "unsubscribe" in out
+    assert "L1,L2" in out and "INBOX" in out
+    ft.add("DELETE", "settings/filters/f1", {})
+    out = run("gmail", "filters", "rm", "f1")
+    assert "settings/filters/f1" in ft.calls[-1]["url"]
+    assert "deleted f1" in out
+
+
+def test_filters_create_resolves_label(gmail):
+    ft, run = gmail
+    ft.add("GET", "labels", {"labels": [{"id": "L9", "name": "todo"}]})
+    ft.add("POST", "settings/filters", {"id": "f2"})
+    out = run("gmail", "filters", "create", "--from", "spam@x.com",
+              "--add-label", "todo")
+    assert json.loads(ft.calls[-1]["data"]) == {
+        "criteria": {"from": "spam@x.com"},
+        "action": {"addLabelIds": ["L9"]},
+    }
+    assert "created f2" in out
+    ft.add("POST", "settings/filters", {"id": "f3"})
+    run("gmail", "filters", "create", "--query", "unsubscribe", "--delete")
+    assert json.loads(ft.calls[-1]["data"]) == {
+        "criteria": {"query": "unsubscribe"},
+        "action": {"addLabelIds": ["TRASH"]},
+    }
+
+
+def test_filters_create_requires_criteria_and_action(gmail):
+    ft, run = gmail
+    run("gmail", "filters", "create", "--add-label", "todo", expect=1)
+    run("gmail", "filters", "create", "--from", "spam@x.com", expect=1)
+    assert ft.calls == []  # both rejected before any HTTP
+
+
+def test_batch_modify_pages_and_posts_ids(gmail):
+    ft, run = gmail
+    ft.add("GET", "messages?", {"messages": [{"id": "m1"}, {"id": "m2"}],
+                                "nextPageToken": "tok"})
+    ft.add("GET", "pageToken=tok", {"messages": [{"id": "m3"}]})
+    ft.add("GET", "labels", {"labels": [{"id": "L9", "name": "todo"}]})
+    ft.add("POST", "messages/batchModify", {})
+    out = run("gmail", "batch-modify", "--query", "from:spam",
+              "--add-label", "todo")
+    assert "q=from%3Aspam" in ft.calls[0]["url"]
+    assert json.loads(ft.calls[-1]["data"]) == {"ids": ["m1", "m2", "m3"],
+                                                "addLabelIds": ["L9"]}
+    assert "modified 3 message(s)" in out
+
+
+def test_batch_modify_requires_label_flag(gmail):
+    ft, run = gmail
+    run("gmail", "batch-modify", "--query", "from:spam", expect=1)
+    assert ft.calls == []

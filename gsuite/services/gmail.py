@@ -1,5 +1,6 @@
 """`gsuite gmail` — search, read, threads, attachments, send, reply,
-forward, labels, drafts, trash."""
+forward, labels, drafts, trash, settings (vacation, signature, filters),
+batch label edits."""
 from __future__ import annotations
 
 import base64
@@ -8,7 +9,7 @@ import mimetypes
 import os
 from email.message import EmailMessage
 
-from gsuite.api import Client
+from gsuite.api import Client, quote_id
 from gsuite.cmdreg import Cmd, Group, arg, max_flag, register_service
 from gsuite.errors import CLIError
 from gsuite.output import confirm, emit, emit_obj
@@ -269,6 +270,118 @@ def cmd_drafts_create(args) -> int:
     return 0
 
 
+def cmd_vacation_show(args) -> int:
+    settings = Client.for_args(args).get(f"{BASE}/settings/vacation")
+    emit_obj(args, {
+        "enabled": settings.get("enableAutoReply", False),
+        "subject": settings.get("responseSubject", ""),
+        "body": settings.get("responseBodyPlainText", ""),
+    })
+    return 0
+
+
+def cmd_vacation_set(args) -> int:
+    Client.for_args(args).put(f"{BASE}/settings/vacation", json_body={
+        "enableAutoReply": True,
+        "responseSubject": args.subject,
+        "responseBodyPlainText": args.body,
+    })
+    confirm("vacation responder enabled")
+    return 0
+
+
+def cmd_vacation_off(args) -> int:
+    Client.for_args(args).put(f"{BASE}/settings/vacation",
+                              json_body={"enableAutoReply": False})
+    confirm("vacation responder disabled")
+    return 0
+
+
+def _send_as_entry(client: Client, email: str | None) -> dict:
+    """The send-as entry for `email`, or the primary one when no email given."""
+    entries = client.get(f"{BASE}/settings/sendAs").get("sendAs", [])
+    for entry in entries:
+        wanted = (entry.get("sendAsEmail") == email if email
+                  else entry.get("isPrimary"))
+        if wanted:
+            return entry
+    raise CLIError(f"no such send-as address: {email}" if email
+                   else "no primary send-as address")
+
+
+def cmd_signature_show(args) -> int:
+    entry = _send_as_entry(Client.for_args(args), args.send_as)
+    print(entry.get("signature", ""))
+    return 0
+
+
+def cmd_signature_set(args) -> int:
+    client = Client.for_args(args)
+    email = _send_as_entry(client, args.send_as)["sendAsEmail"]
+    client.patch(f"{BASE}/settings/sendAs/{quote_id(email)}",
+                 json_body={"signature": args.html})
+    confirm("signature updated for", email)
+    return 0
+
+
+def cmd_filters_list(args) -> int:
+    filters = Client.for_args(args).get(f"{BASE}/settings/filters").get("filter", [])
+    emit(args, filters, [
+        ("ID", "id"),
+        ("FROM", lambda f: f.get("criteria", {}).get("from", "")),
+        ("QUERY", lambda f: f.get("criteria", {}).get("query", "")),
+        ("ADD", lambda f: ",".join(f.get("action", {}).get("addLabelIds", []))),
+        ("REMOVE", lambda f: ",".join(f.get("action", {}).get("removeLabelIds", []))),
+    ])
+    return 0
+
+
+def cmd_filters_create(args) -> int:
+    sender = getattr(args, "from")
+    if not sender and not args.query:
+        raise CLIError("give at least one criterion: --from or --query")
+    if not args.add_label and not args.delete:
+        raise CLIError("give an action: --add-label or --delete")
+    criteria = {}
+    if sender:
+        criteria["from"] = sender
+    if args.query:
+        criteria["query"] = args.query
+    client = Client.for_args(args)
+    action = {"addLabelIds": [_label_id(client, args.add_label)
+                              if args.add_label else "TRASH"]}
+    created = client.post(f"{BASE}/settings/filters",
+                          json_body={"criteria": criteria, "action": action})
+    confirm("created", created.get("id"))
+    return 0
+
+
+def cmd_filters_rm(args) -> int:
+    Client.for_args(args).delete(f"{BASE}/settings/filters/{args.id}")
+    confirm("deleted", args.id)
+    return 0
+
+
+def cmd_batch_modify(args) -> int:
+    if not args.add_label and not args.remove_label:
+        raise CLIError("give --add-label and/or --remove-label")
+    client = Client.for_args(args)
+    ids = [ref["id"] for ref in client.paged(f"{BASE}/messages",
+                                             params={"q": args.query},
+                                             key="messages", limit=args.max)]
+    if not ids:
+        print("no messages matched")
+        return 0
+    body: dict = {"ids": ids}
+    if args.add_label:
+        body["addLabelIds"] = [_label_id(client, args.add_label)]
+    if args.remove_label:
+        body["removeLabelIds"] = [_label_id(client, args.remove_label)]
+    client.post(f"{BASE}/messages/batchModify", json_body=body)
+    confirm("modified", len(ids), "message(s)")
+    return 0
+
+
 def register(subparsers) -> None:
     register_service(subparsers, "gmail", "search, read, send, labels, drafts", [
         Cmd("search", cmd_search, "search messages (Gmail query syntax)",
@@ -296,4 +409,36 @@ def register(subparsers) -> None:
             Cmd("list", cmd_drafts_list),
             Cmd("create", cmd_drafts_create, args=COMPOSE_ARGS),
         )),
+        Group("vacation", "auto-reply (vacation responder) settings", (
+            Cmd("show", cmd_vacation_show),
+            Cmd("set", cmd_vacation_set,
+                args=(arg("--subject", required=True),
+                      arg("--body", required=True))),
+            Cmd("off", cmd_vacation_off),
+        )),
+        Group("signature", "send-as signatures", (
+            Cmd("show", cmd_signature_show,
+                args=(arg("--send-as", metavar="EMAIL",
+                          help="send-as address (default: primary)"),)),
+            Cmd("set", cmd_signature_set,
+                args=(arg("--html", required=True),
+                      arg("--send-as", metavar="EMAIL",
+                          help="send-as address (default: primary)"))),
+        )),
+        Group("filters", "manage filters", (
+            Cmd("list", cmd_filters_list),
+            Cmd("create", cmd_filters_create,
+                args=(arg("--from", help="match sender"),
+                      arg("--query", help="match a Gmail search query"),
+                      arg("--add-label", metavar="NAME",
+                          help="apply this label to matches"),
+                      arg("--delete", action="store_true",
+                          help="send matches to trash"))),
+            Cmd("rm", cmd_filters_rm, args=(arg("id"),)),
+        )),
+        Cmd("batch-modify", cmd_batch_modify,
+            "add/remove a label across all query matches",
+            (arg("--query", required=True),
+             arg("--add-label", metavar="NAME"),
+             arg("--remove-label", metavar="NAME"), max_flag(500))),
     ])
