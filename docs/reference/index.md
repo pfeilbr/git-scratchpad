@@ -20,5 +20,7 @@ One page per service, generated from the CLI's own parser tree by
 | [`gsuite admin`](admin.md) | Workspace admin: users, groups |
 | [`gsuite forms`](forms.md) | Google Forms: create, inspect, responses |
 | [`gsuite meet`](meet.md) | Google Meet spaces and conferences |
+| [`gsuite searchconsole`](searchconsole.md) | Search Console: sites, search analytics, URL inspection |
+| [`gsuite analytics`](analytics.md) | Google Analytics 4: properties and reports |
 | [`gsuite api`](api.md) | raw calls to any Google API |
 | [`gsuite completion`](completion.md) | shell tab-completion (generated from the parser tree) |

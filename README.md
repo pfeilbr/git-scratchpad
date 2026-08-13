@@ -2,8 +2,9 @@
 
 One command-line tool for all of Google Workspace — Gmail, Calendar, Drive,
 Docs, Sheets, Slides, Contacts, Tasks, Chat, Keep, Forms, Meet, and Workspace
-Admin — plus a raw passthrough to **any** Google API via the Discovery
-service, and shell completion for the whole surface.
+Admin — plus Search Console and Google Analytics reporting, a raw passthrough
+to **any** Google API via the Discovery service, and shell completion for the
+whole surface.
 
 It combines the command surfaces of two existing tools:
 
@@ -80,6 +81,8 @@ options tables and worked examples.
 | [`gsuite admin`](docs/reference/admin.md)<br/><sub>Workspace admin: users, groups</sub> | `users list|info|create|update|reset-password|suspend|unsuspend|delete` · `groups list|create|members|add-member|rm-member|delete` · `orgunits` |
 | [`gsuite forms`](docs/reference/forms.md)<br/><sub>Google Forms: create, inspect, responses</sub> | `create` · `get` · `questions` · `responses` |
 | [`gsuite meet`](docs/reference/meet.md)<br/><sub>Google Meet spaces and conferences</sub> | `create` · `get` · `end` · `conferences` · `participants` |
+| [`gsuite searchconsole`](docs/reference/searchconsole.md)<br/><sub>Search Console: sites, search analytics, URL inspection</sub> | `sites` · `query` · `inspect` |
+| [`gsuite analytics`](docs/reference/analytics.md)<br/><sub>Google Analytics 4: properties and reports</sub> | `properties` · `report` · `realtime` |
 | [`gsuite api`](docs/reference/api.md)<br/><sub>raw calls to any Google API</sub> | `call` · `describe` · `list` |
 | [`gsuite completion`](docs/reference/completion.md)<br/><sub>shell tab-completion (generated from the parser tree)</sub> | `bash` · `zsh` |
 <!-- END GENERATED COMMAND SUMMARY -->
@@ -129,6 +132,7 @@ Tests never touch the network: all HTTP funnels through
   non-GET is refused before any token or network work happens.
 - **Docs can't drift** — the command reference *and* the README table are
   generated from the parser tree; `verify.py` fails if either goes stale.
-- Not yet covered from the upstream tools: gog's analytics/searchconsole/
-  youtube/zoom integrations and gws's AI "+workflow" helpers; `gsuite api call`
-  reaches those APIs in the meantime.
+- Not yet covered from the upstream tools: gog's youtube/zoom integrations and
+  gws's AI "+workflow" helpers; `gsuite api call` reaches those APIs in the
+  meantime. (gog's analytics and searchconsole surfaces are now covered by the
+  read-only `gsuite analytics` and `gsuite searchconsole` services.)
