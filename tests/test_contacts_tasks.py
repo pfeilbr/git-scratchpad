@@ -49,6 +49,71 @@ def test_contacts_rm(svc):
     run("contacts", "rm", "people/c1")
 
 
+def test_contacts_get_shows_fields(svc):
+    ft, run = svc
+    person = dict(PERSON, organizations=[{"name": "Analytical Engines"}])
+    ft.add("GET", "people/c1", person)
+    out = run("contacts", "get", "people/c1")
+    url = ft.calls[0]["url"]
+    assert ("personFields=names%2CemailAddresses%2CphoneNumbers"
+            "%2Corganizations") in url
+    assert "resource: people/c1" in out
+    assert "name: Ada Lovelace" in out
+    assert "email: ada@x.com" in out
+    assert "phone: +1 555" in out
+    assert "org: Analytical Engines" in out
+
+
+def test_contacts_update_sends_etag_and_only_changed_fields(svc):
+    ft, run = svc
+    ft.add("GET", "people/c1", {"etag": "E1"})
+    ft.add("PATCH", "people/c1:updateContact", PERSON)
+    out = run("contacts", "update", "people/c1",
+              "--name", "Ada King", "--email", "ada@k.com")
+    assert "personFields=names%2CemailAddresses" in ft.calls[0]["url"]
+    assert "updatePersonFields=names%2CemailAddresses" in ft.calls[1]["url"]
+    assert json.loads(ft.calls[1]["data"]) == {
+        "etag": "E1",
+        "names": [{"unstructuredName": "Ada King"}],
+        "emailAddresses": [{"value": "ada@k.com"}],
+    }
+    assert "updated" in out and "people/c1" in out
+
+
+def test_contacts_update_without_flags_errors(svc):
+    ft, run = svc
+    run("contacts", "update", "people/c1", expect=1)
+    assert ft.calls == []
+
+
+def test_contacts_groups_list(svc):
+    ft, run = svc
+    ft.add("GET", "contactGroups", {"contactGroups": [
+        {"resourceName": "contactGroups/g1", "name": "Friends",
+         "memberCount": 3}]})
+    out = run("contacts", "groups", "list")
+    assert "RESOURCE" in out and "NAME" in out and "MEMBERS" in out
+    assert "contactGroups/g1" in out and "Friends" in out and "3" in out
+
+
+def test_contacts_groups_create(svc):
+    ft, run = svc
+    ft.add("POST", "contactGroups", {"resourceName": "contactGroups/g2",
+                                     "name": "Team"})
+    out = run("contacts", "groups", "create", "--name", "Team")
+    assert json.loads(ft.calls[0]["data"]) == {"contactGroup": {"name": "Team"}}
+    assert "created" in out and "contactGroups/g2" in out
+
+
+def test_contacts_groups_add(svc):
+    ft, run = svc
+    ft.add("POST", "contactGroups/g1/members:modify", {})
+    out = run("contacts", "groups", "add", "contactGroups/g1", "people/c1")
+    assert json.loads(ft.calls[0]["data"]) == {
+        "resourceNamesToAdd": ["people/c1"]}
+    assert "added" in out and "people/c1" in out and "contactGroups/g1" in out
+
+
 def test_tasks_lists(svc):
     ft, run = svc
     ft.add("GET", "users/@me/lists", {"items": [{"id": "tl1",
