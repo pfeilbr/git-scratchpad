@@ -111,7 +111,7 @@ sequenceDiagram
 | --- | --- |
 | `gsuite/cli.py` | root parser, service registry, dispatch, exit codes |
 | `gsuite/cmdreg.py` | declarative `Cmd`/`Group`/`arg` → argparse tree |
-| `gsuite/config.py` | `~/.config/gsuite`: accounts, aliases, tokens, client |
+| `gsuite/config.py` | config dir (`~/.config/gsuite` by default): accounts, aliases, tokens, client |
 | `gsuite/oauth.py` | scope registry, loopback flow, code exchange, refresh |
 | `gsuite/api.py` | `Client`: auth header, JSON, pagination, 401 retry, 429/5xx backoff, `--readonly` guard |
 | `gsuite/transport.py` | `request()` — the only code that opens a socket |
@@ -123,8 +123,18 @@ sequenceDiagram
 
 ## On-disk state
 
+The config directory is resolved in this order, first match wins (an env var
+set to the empty string counts as unset):
+
+| # | Condition | Directory |
+| --- | --- | --- |
+| 1 | `$GSUITE_CONFIG_DIR` set | that path, verbatim |
+| 2 | Windows (`os.name == "nt"`) | `%APPDATA%\gsuite`, else `~/.gsuite` |
+| 3 | `$XDG_CONFIG_HOME` set | `$XDG_CONFIG_HOME/gsuite` |
+| 4 | otherwise | `~/.config/gsuite` |
+
 ```text
-~/.config/gsuite/            (override with $GSUITE_CONFIG_DIR)
+~/.config/gsuite/            (the default; see the resolution order above)
 ├── accounts.json            accounts, aliases, default account
 ├── client.json              OAuth client id/secret (Desktop app)
 └── tokens/

@@ -1,6 +1,8 @@
 """On-disk configuration: accounts, aliases, tokens, OAuth client.
 
-Layout (under $GSUITE_CONFIG_DIR, default ~/.config/gsuite):
+Layout, under the config dir ($GSUITE_CONFIG_DIR, else %APPDATA%\\gsuite on
+Windows, else $XDG_CONFIG_HOME/gsuite, else ~/.config/gsuite — see
+`default_config_dir()`):
   accounts.json          accounts, aliases, default account
   client.json            OAuth client credentials (Desktop app type)
   tokens/<email>.json    per-account token set, mode 0600
@@ -14,10 +16,39 @@ from pathlib import Path
 from gsuite.errors import CLIError
 
 
+def _windows() -> bool:
+    """Whether to use Windows conventions.
+
+    A seam so tests can pin the platform. They cannot patch ``os.name``
+    directly: ``pathlib`` picks ``PosixPath`` vs ``WindowsPath`` off it at
+    every ``Path()`` call, so a patched value makes path construction raise
+    on the host platform ("cannot instantiate 'WindowsPath' on your system").
+    """
+    return os.name == "nt"
+
+
 def default_config_dir() -> Path:
-    env = os.environ.get("GSUITE_CONFIG_DIR")
-    if env:
-        return Path(env)
+    """Directory holding accounts, tokens, and the OAuth client.
+
+    Resolution order, first match wins. An env var set to the empty string
+    counts as unset — a bare ``GSUITE_CONFIG_DIR=`` in a shell script must not
+    scatter config into the current directory:
+
+    1. ``$GSUITE_CONFIG_DIR`` — explicit override, honored on every platform.
+    2. Windows: ``%APPDATA%\\gsuite``, or ``~/.gsuite`` if APPDATA is unset.
+    3. ``$XDG_CONFIG_HOME/gsuite`` — the XDG Base Directory spec gives the
+       variable precedence over its default.
+    4. ``~/.config/gsuite`` — that XDG default, and the common case.
+    """
+    override = os.environ.get("GSUITE_CONFIG_DIR")
+    if override:
+        return Path(override)
+    if _windows():
+        appdata = os.environ.get("APPDATA")
+        return Path(appdata) / "gsuite" if appdata else Path.home() / ".gsuite"
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    if xdg:
+        return Path(xdg) / "gsuite"
     return Path.home() / ".config" / "gsuite"
 
 

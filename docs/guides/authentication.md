@@ -38,7 +38,8 @@ Logged in as you@example.com (services: calendar, contacts, drive, gmail)
 - Scope only what you need with `--services`
   (`gmail,calendar,drive,docs,sheets,slides,contacts,tasks,chat,keep,admin`).
   Fewer scopes → a shorter consent screen and safer tokens.
-- Tokens land in `~/.config/gsuite/tokens/<email>.json` with mode `0600`
+- Tokens land in `tokens/<email>.json` under the config directory
+  (`~/.config/gsuite` by default) with mode `0600`
   and are refreshed automatically (60 s before expiry, plus a self-healing
   retry on 401).
 
@@ -61,8 +62,9 @@ name. `auth logout <email>` removes the account, its token, and any aliases.
 ## Headless / CI machines
 
 1. Log in once on a machine with a browser.
-2. Copy `~/.config/gsuite/` to the headless host (or set
-   `GSUITE_CONFIG_DIR` to a mounted secret path).
+2. Copy the config directory to the headless host (or set
+   `GSUITE_CONFIG_DIR` to a mounted secret path — it overrides the location on
+   every platform, and wins over `XDG_CONFIG_HOME` and `%APPDATA%`).
 3. Refresh happens over HTTPS without any browser.
 
 For other tooling, `gsuite auth token` prints a fresh access token — see
