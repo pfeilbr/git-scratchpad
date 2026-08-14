@@ -94,7 +94,7 @@ Update fields of an event.
 usage: gsuite calendar update [-h] [--calendar CALENDAR] [--summary SUMMARY]
                               [--start START] [--end END]
                               [--location LOCATION]
-                              [--description DESCRIPTION]
+                              [--description DESCRIPTION] [--tz NAME]
                               id
 ```
 
@@ -107,6 +107,7 @@ usage: gsuite calendar update [-h] [--calendar CALENDAR] [--summary SUMMARY]
 | `--end END` |  |  | YYYY-MM-DD (all-day) or YYYY-MM-DDTHH:MM |
 | `--location LOCATION` |  |  |  |
 | `--description DESCRIPTION` |  |  |  |
+| `--tz NAME` |  |  | IANA timezone for bare dates and times, e.g. America/New_York (default: the system timezone) |
 
 ### `gsuite calendar respond`
 
@@ -130,7 +131,7 @@ Busy blocks per calendar in a window.
 
 ```text
 usage: gsuite calendar freebusy [-h] --from WHEN --to WHEN
-                                [--calendars CALENDARS]
+                                [--calendars CALENDARS] [--tz NAME]
 ```
 
 | Argument | Required | Default | Description |
@@ -138,6 +139,7 @@ usage: gsuite calendar freebusy [-h] --from WHEN --to WHEN
 | `--from WHEN` | yes |  | RFC3339 or YYYY-MM-DD lower bound |
 | `--to WHEN` | yes |  | RFC3339 or YYYY-MM-DD upper bound |
 | `--calendars CALENDARS` |  |  | comma-separated calendar ids (default: primary) |
+| `--tz NAME` |  |  | IANA timezone for bare dates and times, e.g. America/New_York (default: the system timezone) |
 
 ### `gsuite calendar delete`
 

@@ -173,6 +173,7 @@ def cmd_delete(args) -> int:
 
 
 def cmd_update(args) -> int:
+    tz = _zone(args.tz)
     body: dict = {}
     for field in ("summary", "location", "description"):
         value = getattr(args, field)
@@ -182,7 +183,7 @@ def cmd_update(args) -> int:
         value = getattr(args, field)
         if value is not None:
             kind, point = _parse_point(value)
-            body[field] = {kind: point}
+            body[field] = _slot(kind, point, tz)
     if not body:
         raise CLIError("nothing to update (pass --summary, --start, --end, "
                        "--location, or --description)")
@@ -210,8 +211,9 @@ def cmd_respond(args) -> int:
 def cmd_freebusy(args) -> int:
     calendars = [c.strip() for c in (args.calendars or "primary").split(",")
                  if c.strip()]
-    body = {"timeMin": _to_rfc3339(getattr(args, "from"), dt.timezone.utc),
-            "timeMax": _to_rfc3339(args.to, dt.timezone.utc),
+    tz = _zone(args.tz)
+    body = {"timeMin": _to_rfc3339(getattr(args, "from"), tz),
+            "timeMax": _to_rfc3339(args.to, tz),
             "items": [{"id": c} for c in calendars]}
     result = Client.for_args(args).post(f"{BASE}/freeBusy", json_body=body)
     rows = [{"calendar": cal_id, "from": block.get("start", ""),
@@ -245,7 +247,7 @@ def register(subparsers) -> None:
             (CALENDAR_FLAG, arg("id"), arg("--summary"),
              arg("--start", help="YYYY-MM-DD (all-day) or YYYY-MM-DDTHH:MM"),
              arg("--end", help="YYYY-MM-DD (all-day) or YYYY-MM-DDTHH:MM"),
-             arg("--location"), arg("--description"))),
+             arg("--location"), arg("--description"), TZ_FLAG)),
         Cmd("respond", cmd_respond, "respond to an event invitation",
             (CALENDAR_FLAG, arg("id"),
              arg("--as", dest="as_", required=True,
@@ -257,6 +259,7 @@ def register(subparsers) -> None:
              arg("--to", metavar="WHEN", required=True,
                  help="RFC3339 or YYYY-MM-DD upper bound"),
              arg("--calendars",
-                 help="comma-separated calendar ids (default: primary)"))),
+                 help="comma-separated calendar ids (default: primary)"),
+             TZ_FLAG)),
         Cmd("delete", cmd_delete, "delete an event", (CALENDAR_FLAG, arg("id"))),
     ])
