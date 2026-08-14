@@ -16,16 +16,43 @@ from gsuite.output import emit
 DISCOVERY = "https://www.googleapis.com/discovery/v1/apis"
 
 
+def _print_response(body: bytes) -> None:
+    """Pretty-print a JSON reply; print any other body as text.
+
+    `api call` can reach endpoints that answer text, HTML or CSV (Drive's
+    `export`, `alt=media`, a proxy's error page), so it takes the bytes raw
+    and decides here — `Client.request` keeps parsing JSON for every typed
+    caller. A body that opens like JSON but does not parse is a real error
+    (a truncated reply), so it is reported rather than dumped on stdout.
+    """
+    if not body:
+        print("{}")  # 204/empty: unchanged from when request() parsed for us
+        return
+    try:
+        parsed = json.loads(body)
+    except ValueError as exc:
+        text = body.decode("utf-8", errors="replace")
+        if text.lstrip()[:1] in ("{", "["):
+            raise CLIError(f"response was not valid JSON: {exc}") from exc
+        sys.stdout.write(text if text.endswith("\n") else text + "\n")
+        return
+    print(json.dumps(parsed, indent=2, sort_keys=True))
+
+
 def cmd_call(args) -> int:
     url = args.path
     if not url.startswith("http"):
         url = f"https://www.googleapis.com/{url.lstrip('/')}"
-    params = {}
+    params: dict[str, list[str]] = {}
     for pair in args.param or []:
         if "=" not in pair:
             raise CLIError(f"bad --param (want key=value): {pair}")
         key, value = pair.split("=", 1)
-        params[key] = value
+        # Repeated keys accumulate instead of overwriting: several APIs take a
+        # parameter more than once (Gmail's metadataHeaders and labelIds,
+        # Calendar's eventTypes), and request()'s urlencode(doseq=True)
+        # expands each list back into one occurrence per value.
+        params.setdefault(key, []).append(value)
     body = None
     if args.body is not None:
         text = args.body
@@ -41,10 +68,9 @@ def cmd_call(args) -> int:
             body = json.loads(text)
         except ValueError as exc:
             raise CLIError(f"--body is not valid JSON: {exc}") from exc
-    result = Client.for_args(args).request(args.method.upper(), url,
-                                           params=params or None,
-                                           json_body=body)
-    print(json.dumps(result, indent=2, sort_keys=True))
+    _print_response(Client.for_args(args).request(args.method.upper(), url,
+                                                  params=params or None,
+                                                  json_body=body, raw=True))
     return 0
 
 
@@ -91,7 +117,9 @@ def register(subparsers) -> None:
             (arg("method", help="GET/POST/PATCH/PUT/DELETE"),
              arg("path", help="full URL or path under www.googleapis.com "
                               "(e.g. drive/v3/about)"),
-             arg("--param", action="append", metavar="KEY=VALUE"),
+             arg("--param", action="append", metavar="KEY=VALUE",
+                 help="query parameter; repeat for more than one, and "
+                      "repeat the same key to send it more than once"),
              arg("--body", help="JSON request body (@file reads from a "
                                 "file, - reads from stdin)"))),
         Cmd("describe", cmd_describe,

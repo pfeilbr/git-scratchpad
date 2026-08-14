@@ -147,7 +147,20 @@ gsuite api call POST https://forms.googleapis.com/v1/forms \
 ```
 
 `--param k=v` adds query parameters; a bare path is resolved against
-`https://www.googleapis.com/`.
+`https://www.googleapis.com/`. Repeat the flag for more parameters — and
+repeat the *same key* for APIs that take one parameter several times, such
+as Gmail's `metadataHeaders`/`labelIds` or Calendar's `eventTypes`:
+
+```sh
+gsuite api call GET gmail/v1/users/me/messages/MSG_ID \
+  --param format=metadata \
+  --param metadataHeaders=From --param metadataHeaders=Subject
+```
+
+A JSON reply is pretty-printed; a reply that isn't JSON (Drive's `export`,
+`alt=media`, an HTML error page from a proxy) is printed as text, so it
+pipes straight to a file. A truncated or malformed JSON reply is an
+`error:` line and exit 1 rather than garbage on stdout.
 
 ## Recipes
 
