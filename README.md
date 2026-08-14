@@ -67,7 +67,7 @@ options tables and worked examples.
 <!-- BEGIN GENERATED COMMAND SUMMARY -->
 | Service | Commands |
 | --- | --- |
-| [`gsuite auth`](docs/reference/auth.md)<br/><sub>login, accounts, aliases, tokens</sub> | `login` · `logout` · `list` · `status` · `switch` · `alias set|rm|list` · `credentials set` · `token` · `adc` · `doctor` |
+| [`gsuite auth`](docs/reference/auth.md)<br/><sub>login, accounts, aliases, tokens</sub> | `login` · `logout` · `revoke` · `list` · `status` · `switch` · `alias set|rm|list` · `credentials set` · `token` · `adc` · `doctor` |
 | [`gsuite gmail`](docs/reference/gmail.md)<br/><sub>search, read, send, labels, drafts</sub> | `search` · `get` · `thread` · `attachments` · `send` · `reply` · `forward` · `archive` · `unarchive` · `mark-read` · `mark-unread` · `spam` · `unspam` · `trash` · `untrash` · `labels list|create|apply|remove` · `drafts list|create` · `vacation show|set|off` · `signature show|set` · `filters list|create|rm` · `batch-modify` |
 | [`gsuite calendar`](docs/reference/calendar.md)<br/><sub>calendars, events, agenda</sub> | `calendars` · `events` · `agenda` · `create` · `get` · `update` · `respond` · `freebusy` · `delete` |
 | [`gsuite drive`](docs/reference/drive.md)<br/><sub>files: ls, search, upload, share</sub> | `ls` · `search` · `audit` · `info` · `mv` · `mkdir` · `upload` · `download` · `export` · `share` · `permissions` · `trash` · `restore` · `rm` · `copy` · `drives` |
