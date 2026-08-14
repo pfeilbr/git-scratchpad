@@ -57,7 +57,46 @@ $ gsuite auth switch work@corp.com       # change the default
 ```
 
 `-a/--account` accepts an email **or an alias** and goes before the service
-name. `auth logout <email>` removes the account, its token, and any aliases.
+name.
+
+### Logging out revokes the token at Google
+
+`auth logout <email>` removes the account, its token, and any aliases — and
+before deleting anything local it POSTs the refresh token to Google's
+revocation endpoint, so the credential dies everywhere rather than only on
+this disk. Without that step a copy of the deleted file — a backup, a synced
+home directory — would keep working indefinitely.
+
+```console
+$ gsuite auth logout work@corp.com
+Logged out work@corp.com (token revoked at Google)
+```
+
+Revocation can be attempted, never guaranteed: the network may be down, or the
+token may already be dead. A failure never blocks the local removal (you asked
+to log out), so it prints a warning with the manual next step and still exits
+`0`:
+
+```console
+$ gsuite auth logout work@corp.com
+warning: could not revoke the token at Google: cannot reach oauth2.googleapis.com: … — it may still be valid; revoke it at https://myaccount.google.com/permissions
+Logged out work@corp.com (removed locally only)
+```
+
+- `--no-revoke` skips the call entirely — for a machine that is offline, or
+  when you deliberately want the grant to outlive this install.
+- `gsuite auth revoke [email]` revokes **without** removing the account: the
+  credential-rotation move, kill the token now and `gsuite auth login` for a
+  fresh one. Unlike `logout` it exits non-zero when the revocation fails,
+  because revoking was the entire job.
+- When `$GSUITE_ACCESS_TOKEN` is the credential source, nothing is revoked and
+  gsuite says so — that token was minted elsewhere and is not gsuite's to kill.
+
+```console
+$ gsuite auth revoke work@corp.com
+work@corp.com: token revoked at Google
+The account is still configured — run `gsuite auth login work@corp.com` to get a new token.
+```
 
 ## Headless / CI machines
 
@@ -178,4 +217,5 @@ FAIL at least one account — run `gsuite auth login <email>`
 | `token has no refresh_token` | client re-used an old consent | `gsuite auth login` again (we always request `prompt=consent`) |
 | `HTTP 403 … accessNotConfigured` | API not enabled in your GCP project | enable it in **APIs & Services** |
 | `HTTP 401` loops | token revoked | `gsuite auth login <email>` |
+| a logged-out account still has access | logout used `--no-revoke`, or its revocation failed | `gsuite auth revoke <email>`, or remove the app at [myaccount.google.com/permissions](https://myaccount.google.com/permissions) |
 | `is a service_account key` | ADC points at a service-account JSON | `gsuite auth login`, or export `GSUITE_ACCESS_TOKEN` |

@@ -7,7 +7,11 @@ import time
 from gsuite import oauth
 from gsuite.cmdreg import Cmd, Group, arg, register_service
 from gsuite.config import ConfigStore
-from gsuite.errors import CLIError
+from gsuite.errors import AuthError, CLIError
+from gsuite.output import confirm
+
+# Where a human can finish the job when revocation could not be done here.
+PERMISSIONS_URL = "https://myaccount.google.com/permissions"
 
 
 def _token_state(token: dict | None) -> str:
@@ -41,11 +45,57 @@ def cmd_login(args) -> int:
     return 0
 
 
+def _revoke_stored_token(store: ConfigStore, email: str) -> tuple[str, str]:
+    """Revoke an account's token at Google: ("revoked"|"skipped"|"failed", why).
+
+    Deliberately returns the outcome instead of raising: `logout` has to
+    remove the account even when Google is unreachable — the user asked to
+    log out — so each caller decides what a failure means.
+    """
+    if oauth.env_access_token():
+        return "skipped", (f"${oauth.ACCESS_TOKEN_ENV} is the credential "
+                           "source — that token is not gsuite's to revoke")
+    token = store.load_token(email)
+    if token is None:
+        return "skipped", "no stored token — nothing to revoke"
+    try:
+        oauth.revoke_token(token)
+    except CLIError as exc:  # HTTP error, or the network never got there
+        return "failed", str(exc)
+    return "revoked", "token revoked at Google"
+
+
 def cmd_logout(args) -> int:
+    # Revoke first: once the local file is gone the refresh token is only
+    # recoverable from a backup, and it would stay valid at Google forever.
     store = ConfigStore()
     email = store.resolve(args.email)
+    if args.no_revoke:
+        outcome = "skipped"
+        detail = "--no-revoke: the token stays valid at Google"
+    else:
+        outcome, detail = _revoke_stored_token(store, email)
+    if outcome == "failed":
+        confirm(f"warning: could not revoke the token at Google: {detail} —",
+                f"it may still be valid; revoke it at {PERMISSIONS_URL}")
+        detail = "removed locally only"
     store.remove_account(email)
-    print(f"Logged out {email}")
+    confirm(f"Logged out {email} ({detail})")
+    return 0
+
+
+def cmd_revoke(args) -> int:
+    store = ConfigStore()
+    email = store.resolve(args.email)
+    outcome, detail = _revoke_stored_token(store, email)
+    if outcome == "failed":
+        raise AuthError(f"could not revoke the token for {email}: {detail} "
+                        "— the account is still configured, and the token may "
+                        f"still be valid ({PERMISSIONS_URL})")
+    confirm(f"{email}: {detail}")
+    if outcome == "revoked":
+        confirm("The account is still configured — run "
+                f"`gsuite auth login {email}` to get a new token.")
     return 0
 
 
@@ -177,8 +227,16 @@ def register(subparsers) -> None:
              arg("--services", help="comma-separated services to authorize, "
                  "or `all` for every service "
                  f"(default: {','.join(oauth.DEFAULT_SERVICES)})"))),
-        Cmd("logout", cmd_logout, "remove an account and its token",
-            (arg("email"),)),
+        Cmd("logout", cmd_logout,
+            "revoke the token at Google, then remove the account locally",
+            (arg("email"),
+             arg("--no-revoke", action="store_true",
+                 help="remove the account locally without revoking its token "
+                      "at Google (offline, or deliberately keeping it alive)"))),
+        Cmd("revoke", cmd_revoke,
+            "revoke an account's token at Google, keeping the account",
+            (arg("email", nargs="?",
+                 help="account email or alias (default: the default account)"),)),
         Cmd("list", cmd_list, "list accounts"),
         Cmd("status", cmd_status, "show current account and token state"),
         Cmd("switch", cmd_switch, "set the default account", (arg("email"),)),

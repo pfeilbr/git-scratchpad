@@ -186,6 +186,101 @@ def test_auth_doctor_ok(store, run_cli):
     assert "FAIL" not in out
 
 
+# -- revoking tokens at Google -----------------------------------------------
+
+REVOKE_URL = "https://oauth2.googleapis.com/revoke"
+
+
+def add_revoke_route(ft, status=200, body=b""):
+    ft.add("POST", "oauth2.googleapis.com/revoke", body, status=status)
+
+
+def test_revoke_token_posts_the_refresh_token_form_encoded(fake_transport):
+    add_revoke_route(fake_transport)
+    oauth.revoke_token({"access_token": "tok", "refresh_token": "ref"})
+    call = fake_transport.calls[0]
+    assert call["method"] == "POST"
+    assert call["url"] == REVOKE_URL
+    assert call["data"] == b"token=ref"
+    assert call["headers"]["Content-Type"] == "application/x-www-form-urlencoded"
+
+
+def test_revoke_token_raises_on_unexpected_status(fake_transport):
+    add_revoke_route(fake_transport, status=503, body={"error": "backend"})
+    with pytest.raises(AuthError, match="503"):
+        oauth.revoke_token({"refresh_token": "ref"})
+
+
+def test_auth_logout_revokes_the_refresh_token_then_removes(authed,
+                                                            fake_transport,
+                                                            run_cli):
+    add_revoke_route(fake_transport)
+    out = run_cli("auth", "logout", "a@x.com")
+    call = fake_transport.calls[0]
+    assert call["method"] == "POST"
+    assert call["url"] == REVOKE_URL
+    assert call["data"] == b"token=ref"
+    assert "revoked" in out.lower()
+    assert authed.list_accounts() == []
+    assert authed.load_token("a@x.com") is None
+
+
+def test_auth_logout_treats_400_as_already_revoked(authed, fake_transport,
+                                                   run_cli):
+    add_revoke_route(fake_transport, status=400, body={"error": "invalid_token"})
+    out = run_cli("auth", "logout", "a@x.com")
+    assert "revoked" in out.lower()
+    assert "warning" not in out.lower()
+    assert authed.list_accounts() == []
+
+
+def test_auth_logout_removes_account_when_revocation_fails(authed,
+                                                           fake_transport,
+                                                           run_cli):
+    add_revoke_route(fake_transport, status=500, body={"error": "boom"})
+    out = run_cli("auth", "logout", "a@x.com")  # exit 0: the user asked to leave
+    assert "warning" in out.lower()
+    assert authed.list_accounts() == []
+    assert authed.load_token("a@x.com") is None
+
+
+def test_auth_logout_no_revoke_makes_no_request(authed, fake_transport, run_cli):
+    out = run_cli("auth", "logout", "a@x.com", "--no-revoke")
+    assert fake_transport.calls == []
+    assert "--no-revoke" in out
+    assert authed.list_accounts() == []
+
+
+def test_auth_revoke_revokes_but_keeps_the_account(authed, fake_transport,
+                                                   run_cli):
+    add_revoke_route(fake_transport)
+    out = run_cli("auth", "revoke", "a@x.com")
+    assert fake_transport.calls[0]["url"] == REVOKE_URL
+    assert fake_transport.calls[0]["data"] == b"token=ref"
+    assert [a["email"] for a in authed.list_accounts()] == ["a@x.com"]
+    assert "a@x.com" in out
+
+
+def test_revocation_skipped_when_env_access_token_is_the_source(
+        authed, fake_transport, monkeypatch, run_cli):
+    monkeypatch.setenv("GSUITE_ACCESS_TOKEN", "env-tok")
+    out = run_cli("auth", "logout", "a@x.com")
+    assert fake_transport.calls == []          # not gsuite's token to revoke
+    assert "GSUITE_ACCESS_TOKEN" in out        # …and it says so
+    assert authed.list_accounts() == []
+
+
+def test_auth_logout_still_clears_aliases_and_default(authed, fake_transport,
+                                                      run_cli):
+    """Regression pin: revocation must not disturb the local cleanup."""
+    add_revoke_route(fake_transport)
+    authed.add_account("b@x.com")
+    authed.set_alias("me", "a@x.com")
+    run_cli("auth", "logout", "a@x.com")
+    assert authed.default_account() == "b@x.com"
+    assert authed._read()["aliases"] == {}
+
+
 # -- other credential sources: $GSUITE_ACCESS_TOKEN and ADC -------------------
 
 ADC_USER = {"type": "authorized_user", "client_id": "adc-cid",

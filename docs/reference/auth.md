@@ -25,15 +25,28 @@ usage: gsuite auth login [-h] [--services SERVICES] [email]
 
 ### `gsuite auth logout`
 
-Remove an account and its token.
+Revoke the token at Google, then remove the account locally.
 
 ```text
-usage: gsuite auth logout [-h] email
+usage: gsuite auth logout [-h] [--no-revoke] email
 ```
 
 | Argument | Required | Default | Description |
 | --- | --- | --- | --- |
 | `email` | yes |  |  |
+| `--no-revoke` |  |  | remove the account locally without revoking its token at Google (offline, or deliberately keeping it alive) |
+
+### `gsuite auth revoke`
+
+Revoke an account's token at Google, keeping the account.
+
+```text
+usage: gsuite auth revoke [-h] [email]
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `email` |  |  | account email or alias (default: the default account) |
 
 ### `gsuite auth list`
 

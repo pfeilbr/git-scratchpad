@@ -21,6 +21,7 @@ from gsuite.errors import AuthError, CLIError
 
 AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
+REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke"
 USERINFO_ENDPOINT = "https://openidconnect.googleapis.com/v1/userinfo"
 
 # service name -> OAuth scopes (union of what gws and gog request per service)
@@ -156,6 +157,35 @@ def refresh_access_token(client: dict, token: dict) -> dict:
         if key in token and key not in new:
             new[key] = token[key]
     return new
+
+
+def revoke_token(token: dict) -> None:
+    """Invalidate a token at Google, so deleting the local copy is a real logout.
+
+    Revoking a refresh token tears down the whole grant — the access tokens
+    minted from it die with it — so that is what gets sent whenever the token
+    set has one. HTTP 400 means Google already considers the token invalid,
+    which is precisely the state being asked for, so it counts as success.
+    Any other non-200 is raised for the caller to report.
+    """
+    secret = token.get("refresh_token") or token.get("access_token")
+    if not secret:
+        raise AuthError("nothing to revoke: token has no refresh_token or "
+                        "access_token")
+    body = urllib.parse.urlencode({"token": secret}).encode()
+    status, _, raw = transport_mod.request(
+        "POST", REVOKE_ENDPOINT, data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    if status in (200, 400):
+        return
+    try:
+        payload = json.loads(raw or b"{}")
+    except ValueError:  # an error body that is not JSON (proxy page, etc.)
+        payload = {}
+    detail = (payload.get("error_description") or payload.get("error")
+              or (raw or b"").decode(errors="replace").strip() or "no details")
+    raise AuthError(f"revoke endpoint error (HTTP {status}): {detail}")
 
 
 # -- loopback browser flow ----------------------------------------------------
