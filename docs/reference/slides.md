@@ -6,7 +6,7 @@ Presentations: create, info, cat, add.
 usage: gsuite slides [-h] <command> ...
 ```
 
-Global flags go *before* the service name: `-a/--account ACCOUNT`, `--json`, `--readonly`, `--csv`, `--fields FIELDS`, `--debug`.
+Global flags go *before* the service name: `-a/--account ACCOUNT`, `--json`, `--readonly`, `--csv`, `--fields FIELDS`, `--debug`, `--timeout TIMEOUT`.
 
 ## Commands
 

@@ -1,10 +1,14 @@
-"""--debug HTTP tracing at the transport seam."""
+"""--debug HTTP tracing, network-failure reporting and --timeout at the
+transport seam."""
+import socket
 import urllib.error
 import urllib.request
 
 import pytest
 
 import gsuite.transport as transport
+from gsuite.cli import main
+from gsuite.errors import CLIError
 
 URL = "https://example.googleapis.com/v1/things"
 SECRET_BODY = b'{"topSecretPayload": "do-not-log-me"}'
@@ -43,6 +47,17 @@ def urlopen(monkeypatch):
 def debug(monkeypatch):
     """Turn tracing on, restored automatically after the test."""
     monkeypatch.setattr(transport, "DEBUG", True)
+
+
+@pytest.fixture
+def clean_timeout(monkeypatch):
+    """No ambient $GSUITE_TIMEOUT, and main()'s write to TIMEOUT undone after."""
+    monkeypatch.delenv("GSUITE_TIMEOUT", raising=False)
+    monkeypatch.setattr(transport, "TIMEOUT", transport.DEFAULT_TIMEOUT)
+
+
+DNS_FAILURE = socket.gaierror(-2, "Name or service not known")
+DEAD_URL = "https://nonexistent.invalid/x"
 
 
 def test_debug_off_by_default_keeps_stderr_empty(urlopen, capsys):
@@ -115,3 +130,107 @@ def test_cli_without_debug_leaves_transport_quiet(authed, fake_transport,
     fake_transport.add("GET", "labels", {"labels": []})
     run_cli("gmail", "labels", "list")
     assert seen == [False]
+
+
+# -- network failures are errors, not tracebacks ------------------------------
+
+
+def test_url_error_becomes_a_cli_error_naming_host_and_reason(urlopen):
+    urlopen(error=urllib.error.URLError(DNS_FAILURE))
+    with pytest.raises(CLIError) as exc:
+        transport.request("GET", DEAD_URL, headers=HEADERS)
+    message = str(exc.value)
+    assert "nonexistent.invalid" in message
+    assert "Name or service not known" in message
+
+
+def test_socket_timeout_says_so_and_points_at_the_flag(urlopen):
+    urlopen(error=socket.timeout("timed out"))
+    with pytest.raises(CLIError) as exc:
+        transport.request("GET", URL, headers=HEADERS, timeout=5)
+    message = str(exc.value)
+    assert "timed out" in message.lower()
+    assert "--timeout" in message
+    assert "5" in message
+
+
+def test_timeout_wrapped_in_a_url_error_still_reads_as_a_timeout(urlopen):
+    # How a connect timeout actually surfaces: urllib re-raises it as URLError.
+    urlopen(error=urllib.error.URLError(socket.timeout("timed out")))
+    with pytest.raises(CLIError) as exc:
+        transport.request("GET", URL, headers=HEADERS)
+    assert "--timeout" in str(exc.value)
+
+
+def test_http_error_is_still_returned_not_raised(urlopen):
+    err_body = b'{"error": {"message": "boom"}}'
+    failure = urllib.error.HTTPError(URL, 500, "Server Error",
+                                     {"x-trace": "abc"}, None)
+    failure.read = lambda: err_body
+    urlopen(error=failure)
+    status, resp_headers, body = transport.request("GET", URL, headers=HEADERS)
+    assert (status, body) == (500, err_body)
+    assert resp_headers["x-trace"] == "abc"
+
+
+def test_debug_traces_the_failure_without_leaking_headers(urlopen, debug,
+                                                          capsys):
+    urlopen(error=urllib.error.URLError(
+        ConnectionRefusedError(111, "Connection refused")))
+    with pytest.raises(CLIError):
+        transport.request("POST", URL, headers=HEADERS, data=SECRET_BODY)
+    err = capsys.readouterr().err
+    lines = err.splitlines()
+    assert lines[0] == f"→ POST {URL}"
+    assert lines[-1].startswith("← error:")
+    assert "Connection refused" in lines[-1]
+    assert "Authorization" not in err
+    assert "super-secret-token" not in err
+    assert "do-not-log-me" not in err
+
+
+def test_cli_network_failure_exits_1(authed, run_cli, urlopen, clean_timeout):
+    urlopen(error=urllib.error.URLError(DNS_FAILURE))
+    run_cli("api", "call", "GET", DEAD_URL, expect=1)
+
+
+def test_cli_network_failure_prints_an_error_line(authed, capsys, urlopen,
+                                                  clean_timeout):
+    urlopen(error=urllib.error.URLError(DNS_FAILURE))
+    assert main(["api", "call", "GET", DEAD_URL]) == 1
+    err = capsys.readouterr().err
+    assert ("error: cannot reach nonexistent.invalid: "
+            "[Errno -2] Name or service not known") in err
+    assert "Traceback" not in err
+
+
+# -- --timeout / $GSUITE_TIMEOUT ----------------------------------------------
+
+
+def test_timeout_flag_reaches_the_transport(authed, fake_transport, run_cli,
+                                            clean_timeout):
+    fake_transport.add("GET", "labels", {"labels": []})
+    run_cli("--timeout", "5", "gmail", "labels", "list")
+    assert transport.TIMEOUT == 5.0
+
+
+def test_timeout_env_var_is_the_fallback(authed, fake_transport, run_cli,
+                                         clean_timeout, monkeypatch):
+    monkeypatch.setenv("GSUITE_TIMEOUT", "7.5")
+    fake_transport.add("GET", "labels", {"labels": []})
+    run_cli("gmail", "labels", "list")
+    assert transport.TIMEOUT == 7.5
+    fake_transport.add("GET", "labels", {"labels": []})
+    run_cli("--timeout", "5", "gmail", "labels", "list")
+    assert transport.TIMEOUT == 5.0  # the explicit flag wins
+
+
+@pytest.mark.parametrize("bad", ["abc", "0", "-5", "nan", "inf"])
+def test_invalid_timeout_exits_1_naming_the_value(authed, capsys, urlopen,
+                                                  clean_timeout, bad):
+    urlopen(error=AssertionError("no request should be attempted"))
+    assert main(["--timeout", bad, "gmail", "labels", "list"]) == 1
+    err = capsys.readouterr().err
+    assert bad in err
+    assert "--timeout" in err
+    assert "Traceback" not in err
