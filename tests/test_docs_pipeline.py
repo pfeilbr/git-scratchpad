@@ -146,3 +146,18 @@ def test_reference_pages_list_every_global_flag():
             continue
         flag = action.option_strings[-1]
         assert flag in page, f"reference pages never mention global flag {flag}"
+
+
+def test_readme_intro_names_every_global_flag():
+    """The prose above the generated table drifts too — pin it to the parser."""
+    import argparse
+
+    from gsuite.cli import build_parser
+
+    intro = _read("README.md").split(README_BEGIN)[0]
+    for action in build_parser()._actions:
+        if isinstance(action, (argparse._HelpAction, argparse._VersionAction,
+                               argparse._SubParsersAction)):
+            continue
+        flag = action.option_strings[-1]
+        assert flag in intro, f"README intro never mentions global flag {flag}"

@@ -39,9 +39,13 @@ gsuite -a work gmail search is:unread   # act as a specific account
 gsuite auth doctor                      # diagnose setup problems
 ```
 
-Tokens are stored per account under `~/.config/gsuite/tokens/` (mode 0600)
-and refreshed automatically. `GSUITE_CLIENT_ID` / `GSUITE_CLIENT_SECRET`
-override the stored client; `GSUITE_CONFIG_DIR` relocates all state.
+Tokens are stored per account under the config directory (`~/.config/gsuite`
+by default, `%APPDATA%\gsuite` on Windows, `$XDG_CONFIG_HOME/gsuite` when set)
+in files created mode `0600` inside a `0700` directory, and refreshed
+automatically. `gsuite auth logout` revokes the grant at Google rather than
+just deleting the local copy. `GSUITE_CLIENT_ID` / `GSUITE_CLIENT_SECRET`
+override the stored client; `GSUITE_CONFIG_DIR` relocates all state;
+`GSUITE_ACCESS_TOKEN` supplies a token directly.
 
 ## Documentation
 
@@ -58,11 +62,13 @@ on GitHub):
 
 ## Commands
 
-Global flags (before the service name): `-a/--account <email|alias>`,
-`--json` for machine-readable output, and `--readonly` to refuse any request
-that could modify data. The table below is generated from the CLI's own
-parser tree — see the [command reference](docs/reference/index.md) for
-options tables and worked examples.
+Global flags go before the service name: `-a/--account <email|alias>` picks
+the account, `--json` and `--csv` switch output shape, `--fields A,B` narrows
+the columns, `--readonly` refuses any request that could modify data,
+`--debug` traces HTTP metadata to stderr, and `--timeout SECONDS` caps each
+request. The table below is generated from the CLI's own parser tree — see
+the [command reference](docs/reference/index.md) for options tables and
+worked examples.
 
 <!-- BEGIN GENERATED COMMAND SUMMARY -->
 | Service | Commands |
@@ -126,6 +132,8 @@ Tests never touch the network: all HTTP funnels through
 - **One HTTP seam** — `transport.request()` is the single network chokepoint:
   easy to fake, easy to audit.
 - **401 self-healing** — API calls force a token refresh and retry once.
+- **Errors say what to do** — a scope failure names the service and the exact
+  `auth login` command; network failures and closed pipes are ordinary exits.
 - **Transient-error backoff** — 429/5xx retried at 1/2/4s, honoring `Retry-After`.
 - **Pagination everywhere** — `Client.paged()` follows `nextPageToken`.
 - **`--readonly` guard** — enforced at the single client chokepoint, so a
