@@ -25,6 +25,16 @@ def test_params_are_urlencoded(client):
     c.get("https://example.googleapis.com/v1/x", params={"q": "hello world"})
 
 
+def test_list_param_repeats_the_key(client):
+    """doseq expansion: a list value becomes one occurrence per item — what
+    `gmail._fetch_meta` and `api call --param k=a --param k=b` both rely on."""
+    c, ft = client
+    ft.add("GET", "metadataHeaders=From&metadataHeaders=Subject", {"ok": True})
+    c.get("https://gmail.googleapis.com/v1/m",
+          params={"format": "metadata",
+                  "metadataHeaders": ["From", "Subject"]})
+
+
 def test_post_sends_json_body(client):
     c, ft = client
     ft.add("POST", "/v1/x", {"id": "1"})
@@ -57,6 +67,15 @@ def test_raw_returns_bytes(client):
     c, ft = client
     ft.add("GET", "alt=media", b"raw-bytes")
     assert c.get("https://example.googleapis.com/f?alt=media", raw=True) == b"raw-bytes"
+
+
+def test_raw_returns_non_json_bytes_untouched(client):
+    """Regression pin: raw=True never parses, so `drive export`/`download`
+    keep receiving exactly the bytes Google sent, JSON or not."""
+    c, ft = client
+    ft.add("GET", "/export", b"col1,col2\n1,2\n")
+    assert c.get("https://www.googleapis.com/drive/v3/files/f1/export",
+                 raw=True) == b"col1,col2\n1,2\n"
 
 
 def test_paged_follows_next_page_token(client):
