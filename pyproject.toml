@@ -7,7 +7,7 @@ name = "gsuite-cli"
 description = "Unified Google Workspace CLI — combines the command surfaces of Google's gws and steipete's gog with a friendlier auth UX"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 dependencies = []
 dynamic = ["version"]
 

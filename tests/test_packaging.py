@@ -61,3 +61,25 @@ def test_packaging_declares_the_entry_point_and_subpackages():
 def test_smoke_script_exists_and_is_wired_into_ci():
     assert os.path.exists(os.path.join(ROOT, "scripts", "smoke.py"))
     assert "smoke.py" in _read(".github/workflows/ci.yml")
+
+
+# -- what a repo needs before anyone else can use it -------------------------
+
+def test_license_file_exists_and_matches_the_declared_license():
+    """Declaring a license in metadata grants nothing without the text."""
+    license_text = _read("LICENSE")
+    assert "MIT License" in license_text
+    assert "Copyright (c)" in license_text
+    # The permission grant itself, not just a title.
+    assert "without restriction" in license_text
+    pyproject = _read("pyproject.toml")
+    assert 'license = { file = "LICENSE" }' in pyproject, \
+        "pyproject must point at the LICENSE file, not restate the name"
+
+
+def test_changelog_covers_the_current_version():
+    from gsuite import __version__
+
+    changelog = _read("CHANGELOG.md")
+    assert f"## {__version__}" in changelog, \
+        f"CHANGELOG has no entry for the packaged version {__version__}"
