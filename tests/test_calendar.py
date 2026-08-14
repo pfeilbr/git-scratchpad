@@ -1,6 +1,11 @@
+import datetime as dt
 import json
+from zoneinfo import ZoneInfo
 
 import pytest
+
+from gsuite.errors import CLIError
+from gsuite.services import calendar as calendar_svc
 
 BASE = "www.googleapis.com/calendar/v3"
 
@@ -38,13 +43,15 @@ def test_events_create_timed(cal):
     ft, run = cal
     ft.add("POST", "calendars/primary/events", {"id": "new1",
                                                 "htmlLink": "http://cal/x"})
-    run("calendar", "create", "--summary", "Sync",
+    run("calendar", "create", "--summary", "Sync", "--tz", "America/New_York",
         "--start", "2026-01-05T09:00", "--end", "2026-01-05T09:30",
         "--attendees", "a@x.com,b@x.com", "--location", "HQ")
     body = json.loads(ft.calls[0]["data"])
     assert body["summary"] == "Sync"
-    assert body["start"] == {"dateTime": "2026-01-05T09:00:00"}
-    assert body["end"] == {"dateTime": "2026-01-05T09:30:00"}
+    assert body["start"] == {"dateTime": "2026-01-05T09:00:00",
+                             "timeZone": "America/New_York"}
+    assert body["end"] == {"dateTime": "2026-01-05T09:30:00",
+                           "timeZone": "America/New_York"}
     assert body["attendees"] == [{"email": "a@x.com"}, {"email": "b@x.com"}]
     assert body["location"] == "HQ"
 
@@ -161,3 +168,98 @@ def test_freebusy_defaults_to_primary(cal):
     run("calendar", "freebusy", "--from", "2026-01-05", "--to", "2026-01-06")
     body = json.loads(ft.calls[0]["data"])
     assert body["items"] == [{"id": "primary"}]
+
+
+# -- timezone handling -------------------------------------------------------
+#
+# A day starts at *local* midnight, so every bound must carry a real UTC
+# offset. These tests never read the machine's zone: each drives an explicit
+# --tz, or monkeypatches the one helper that resolves the system zone.
+
+
+def test_agenda_tz_bounds_are_local_midnight_not_utc(cal):
+    ft, run = cal
+    ft.add("GET", "calendars/primary/events", {"items": []})
+    run("calendar", "agenda", "--date", "2026-01-05", "--tz", "America/New_York")
+    url = ft.calls[0]["url"]
+    # ':' percent-encodes, so -05:00 arrives as -05%3A00.
+    assert "timeMin=2026-01-05T00%3A00%3A00-05%3A00" in url
+    assert "timeMax=2026-01-06T00%3A00%3A00-05%3A00" in url
+    # regression: the old UTC-midnight form must not survive anywhere.
+    assert "00%3A00%3A00Z" not in url and "00:00:00Z" not in url
+
+
+def test_agenda_without_tz_uses_resolved_local_zone(cal, monkeypatch):
+    ft, run = cal
+    monkeypatch.setattr(calendar_svc, "_local_zone", lambda: ZoneInfo("Asia/Tokyo"))
+    ft.add("GET", "calendars/primary/events", {"items": []})
+    run("calendar", "agenda", "--date", "2026-01-05")
+    url = ft.calls[0]["url"]
+    assert "timeMin=2026-01-05T00%3A00%3A00%2B09%3A00" in url
+    assert "timeMax=2026-01-06T00%3A00%3A00%2B09%3A00" in url
+    assert "00%3A00%3A00Z" not in url
+
+
+def test_agenda_default_date_is_today_in_the_effective_zone(cal):
+    ft, run = cal
+    zone = ZoneInfo("Pacific/Kiritimati")  # UTC+14 year-round
+    ft.add("GET", "calendars/primary/events", {"items": []})
+    before = dt.datetime.now(zone).date()
+    run("calendar", "agenda", "--tz", "Pacific/Kiritimati")
+    after = dt.datetime.now(zone).date()
+    url = ft.calls[0]["url"]
+    # Accept either date so a run straddling midnight cannot flake.
+    assert any(f"timeMin={day.isoformat()}T00%3A00%3A00%2B14%3A00" in url
+               for day in {before, after})
+
+
+def test_events_bare_dates_get_the_offset_and_rfc3339_passes_through(cal):
+    ft, run = cal
+    ft.add("GET", "calendars/primary/events", {"items": []})
+    run("calendar", "events", "--tz", "America/New_York",
+        "--from", "2026-01-05", "--to", "2026-06-10T12:30:00Z")
+    url = ft.calls[0]["url"]
+    assert "timeMin=2026-01-05T00%3A00%3A00-05%3A00" in url
+    assert "timeMin=2026-01-05T00%3A00%3A00Z" not in url
+    # an explicit instant is already unambiguous — leave it alone.
+    assert "timeMax=2026-06-10T12%3A30%3A00Z" in url
+
+
+def test_create_timed_event_declares_its_timezone(cal, monkeypatch):
+    ft, run = cal
+    monkeypatch.setattr(calendar_svc, "_local_zone", lambda: ZoneInfo("Asia/Tokyo"))
+    ft.add("POST", "calendars/primary/events", {"id": "n1"})
+    run("calendar", "create", "--summary", "Sync",
+        "--start", "2026-01-05T09:00", "--end", "2026-01-05T09:30")
+    body = json.loads(ft.calls[0]["data"])
+    assert body["start"] == {"dateTime": "2026-01-05T09:00:00",
+                             "timeZone": "Asia/Tokyo"}
+    assert body["end"] == {"dateTime": "2026-01-05T09:30:00",
+                           "timeZone": "Asia/Tokyo"}
+
+    ft.add("POST", "calendars/primary/events", {"id": "n2"})
+    run("calendar", "create", "--summary", "Offsite", "--start", "2026-01-05",
+        "--tz", "America/New_York")
+    all_day = json.loads(ft.calls[1]["data"])
+    assert all_day["start"] == {"date": "2026-01-05"}
+    assert all_day["end"] == {"date": "2026-01-06"}
+    assert "timeZone" not in json.dumps(all_day)
+
+
+def test_local_zone_is_named_and_dst_aware(monkeypatch):
+    monkeypatch.setenv("TZ", "America/New_York")
+    zone = calendar_svc._local_zone()
+    # A fixed offset snapshotted from "now" would pin one of these two.
+    assert calendar_svc._day_bounds("2026-01-05", zone)[0].endswith("-05:00")
+    assert calendar_svc._day_bounds("2026-07-05", zone)[0].endswith("-04:00")
+    # ...and Google only accepts an IANA name here, never an abbreviation.
+    assert str(zone) == "America/New_York"
+
+
+def test_unknown_timezone_is_a_clean_error(cal):
+    ft, run = cal
+    run("calendar", "agenda", "--date", "2026-01-05", "--tz", "Mars/Olympus",
+        expect=1)
+    assert ft.calls == []
+    with pytest.raises(CLIError, match="Mars/Olympus"):
+        calendar_svc._zone("Mars/Olympus")

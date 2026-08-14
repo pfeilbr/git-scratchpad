@@ -24,7 +24,7 @@ List events in a time window.
 
 ```text
 usage: gsuite calendar events [-h] [--calendar CALENDAR] [--from WHEN]
-                              [--to TO] [--max MAX]
+                              [--to TO] [--tz NAME] [--max MAX]
 ```
 
 | Argument | Required | Default | Description |
@@ -32,6 +32,7 @@ usage: gsuite calendar events [-h] [--calendar CALENDAR] [--from WHEN]
 | `--calendar CALENDAR` |  | `primary` | calendar id (default: primary) |
 | `--from WHEN` |  |  | RFC3339 or YYYY-MM-DD lower bound |
 | `--to TO` |  |  | RFC3339 or YYYY-MM-DD upper bound |
+| `--tz NAME` |  |  | IANA timezone for bare dates and times, e.g. America/New_York (default: the system timezone) |
 | `--max MAX` |  | `50` | maximum results (default: 50) |
 
 ### `gsuite calendar agenda`
@@ -40,12 +41,14 @@ Events for one day (default: today).
 
 ```text
 usage: gsuite calendar agenda [-h] [--calendar CALENDAR] [--date DATE]
+                              [--tz NAME]
 ```
 
 | Argument | Required | Default | Description |
 | --- | --- | --- | --- |
 | `--calendar CALENDAR` |  | `primary` | calendar id (default: primary) |
 | `--date DATE` |  |  | YYYY-MM-DD |
+| `--tz NAME` |  |  | IANA timezone for bare dates and times, e.g. America/New_York (default: the system timezone) |
 
 ### `gsuite calendar create`
 
@@ -56,7 +59,7 @@ usage: gsuite calendar create [-h] [--calendar CALENDAR] --summary SUMMARY
                               --start START [--end END]
                               [--attendees ATTENDEES]
                               [--description DESCRIPTION]
-                              [--location LOCATION]
+                              [--location LOCATION] [--tz NAME]
 ```
 
 | Argument | Required | Default | Description |
@@ -68,6 +71,7 @@ usage: gsuite calendar create [-h] [--calendar CALENDAR] --summary SUMMARY
 | `--attendees ATTENDEES` |  |  | comma-separated emails |
 | `--description DESCRIPTION` |  |  |  |
 | `--location LOCATION` |  |  |  |
+| `--tz NAME` |  |  | IANA timezone for bare dates and times, e.g. America/New_York (default: the system timezone) |
 
 ### `gsuite calendar get`
 
