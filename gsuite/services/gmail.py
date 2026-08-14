@@ -49,18 +49,36 @@ def _plain_body(payload: dict) -> str:
     return ""
 
 
+def _header(label: str, value: str) -> str:
+    """Return `value` if it is safe to store in a header, else raise.
+
+    A CR or LF in a header value is header injection: it can smuggle extra
+    headers (a hidden `Bcc:`) or end the header block early. `email` refuses
+    most of these itself, but with a bare ValueError (a traceback, not a
+    CLI error) and it lets a *trailing* CR/LF through, which is then silently
+    RFC 2047-encoded into a corrupt address. Reject both, naming the source.
+
+    Only headers are checked: newlines in a message body are normal.
+    """
+    if "\r" in value or "\n" in value:
+        raise CLIError(f"{label} may not contain a carriage return or newline")
+    return value
+
+
 def _build_mime(to: str, subject: str, body: str, cc: str | None = None,
                 bcc: str | None = None, extra_headers: dict | None = None,
                 attachments: list[str] | None = None) -> str:
     msg = EmailMessage()
-    msg["To"] = to
+    msg["To"] = _header("--to", to)
     if cc:
-        msg["Cc"] = cc
+        msg["Cc"] = _header("--cc", cc)
     if bcc:
-        msg["Bcc"] = bcc
-    msg["Subject"] = subject
+        msg["Bcc"] = _header("--bcc", bcc)
+    msg["Subject"] = _header("--subject", subject)
+    # Values copied off a fetched message are untrusted too (a hostile
+    # Message-ID on received mail lands here via `reply`).
     for name, value in (extra_headers or {}).items():
-        msg[name] = value
+        msg[name] = _header(name, value)
     msg.set_content(body)
     for path in attachments or []:
         ctype, _ = mimetypes.guess_type(path)
