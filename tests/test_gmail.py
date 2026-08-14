@@ -449,3 +449,110 @@ def test_archive_uses_literal_label_without_lookup(gmail):
     ft.add("POST", "messages/m1/modify", {"id": "m1"})
     run("gmail", "archive", "m1")
     assert len(ft.calls) == 1
+
+
+# --- header injection (CR/LF in header values) -------------------------------
+
+# Shapes an attacker (or a fat-fingered script) can put in a header value.
+# The first three smuggle a whole extra header; the last two are the trailing
+# CR/LF that Python's own `len(value.splitlines()) > 1` guard lets through.
+INJECTION_SHAPES = [
+    "dst@x.com\nBcc: evil@example.com",
+    "dst@x.com\r\nBcc: evil@example.com",
+    "dst@x.com\rBcc: evil@example.com",
+    "dst@x.com\n",
+    "dst@x.com\r",
+]
+
+
+@pytest.mark.parametrize("hostile", INJECTION_SHAPES)
+def test_send_refuses_crlf_in_to_and_sends_nothing(gmail, hostile):
+    ft, run = gmail
+    # No routes registered: any HTTP at all would blow up the fake transport,
+    # so the clean exit 1 proves the value is rejected before the network.
+    run("gmail", "send", "--to", hostile, "--subject", "hi", "--body", "b",
+        expect=1)
+    assert ft.calls == []
+
+
+def test_send_refuses_crlf_in_subject_cc_and_bcc(gmail):
+    ft, run = gmail
+    run("gmail", "send", "--to", "dst@x.com",
+        "--subject", "hi\r\nBcc: evil@example.com", "--body", "b", expect=1)
+    run("gmail", "send", "--to", "dst@x.com", "--subject", "hi", "--body", "b",
+        "--cc", "cc@x.com\nBcc: evil@example.com", expect=1)
+    run("gmail", "send", "--to", "dst@x.com", "--subject", "hi", "--body", "b",
+        "--bcc", "bcc@x.com\nX-Evil: 1", expect=1)
+    assert ft.calls == []
+
+
+def test_header_error_names_the_offending_flag_or_header():
+    from gsuite.errors import CLIError
+    from gsuite.services.gmail import _build_mime
+
+    with pytest.raises(CLIError, match="--to"):
+        _build_mime("a@x.com\nBcc: evil@example.com", "s", "b")
+    with pytest.raises(CLIError, match="--subject"):
+        _build_mime("a@x.com", "s\r\nBcc: evil@example.com", "b")
+    with pytest.raises(CLIError, match="--cc"):
+        _build_mime("a@x.com", "s", "b", cc="c@x.com\nX: 1")
+    with pytest.raises(CLIError, match="--bcc"):
+        _build_mime("a@x.com", "s", "b", bcc="c@x.com\nX: 1")
+    with pytest.raises(CLIError, match="In-Reply-To"):
+        _build_mime("a@x.com", "s", "b",
+                    extra_headers={"In-Reply-To": "<o@x>\nBcc: evil@x.com"})
+
+
+def test_reply_refuses_hostile_message_id_from_fetched_message(gmail):
+    """A Message-ID on *received* mail is untrusted input, not our own value."""
+    ft, run = gmail
+    ft.add("GET", "messages/m1", meta("m1", {
+        "From": "alice@x.com",
+        "Subject": "Question",
+        "Message-ID": "<orig@x>\r\nBcc: evil@example.com",
+    }))
+    ft.add("POST", "messages/send", {"id": "nope"})
+    run("gmail", "reply", "m1", "--body", "answer", expect=1)
+    # The fetch happens first and is fine; nothing may be sent afterwards.
+    assert [c["method"] for c in ft.calls] == ["GET"]
+
+
+def test_send_keeps_multiline_body_intact(gmail):
+    """Newlines are normal in a body and must not be restricted."""
+    ft, run = gmail
+    ft.add("POST", "messages/send", {"id": "sentb"})
+    body = "first line\nsecond line\n\nafter a blank line"
+    run("gmail", "send", "--to", "dst@x.com", "--subject", "hi", "--body", body)
+    _, mime = sent_mime(ft)
+    assert mime.get_payload() == body + "\n"
+    assert mime["To"] == "dst@x.com"
+
+
+def test_send_ordinary_values_are_byte_identical(gmail):
+    """Regression pin: the exact wire bytes for a normal send do not change."""
+    ft, run = gmail
+    ft.add("POST", "messages/send", {"id": "sentp"})
+    run("gmail", "send", "--to", "dst@x.com", "--subject", "Hi there",
+        "--body", "the body", "--cc", "cc@x.com")
+    assert json.loads(ft.calls[-1]["data"])["raw"] == (
+        "VG86IGRzdEB4LmNvbQpDYzogY2NAeC5jb20KU3ViamVjdDogSGkgdGhlcmUKQ29udGVu"
+        "dC1UeXBlOiB0ZXh0L3BsYWluOyBjaGFyc2V0PSJ1dGYtOCIKQ29udGVudC1UcmFuc2Zl"
+        "ci1FbmNvZGluZzogN2JpdApNSU1FLVZlcnNpb246IDEuMAoKdGhlIGJvZHkK"
+    )
+
+
+def test_send_allows_long_subject_that_the_library_folds(gmail):
+    """Folding inserts newlines at serialization time, not into the value."""
+    ft, run = gmail
+    ft.add("POST", "messages/send", {"id": "sentf"})
+    subject = ("Quarterly planning review for the distributed systems team "
+               "covering roadmap milestones and staffing")
+    run("gmail", "send", "--to", "dst@x.com", "--subject", subject,
+        "--body", "b")
+    raw = json.loads(ft.calls[-1]["data"])["raw"]
+    wire = base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)).decode()
+    assert "\n roadmap milestones and staffing" in wire  # really folded
+    _, mime = sent_mime(ft)
+    # Unfolding (dropping the inserted newline, keeping the fold whitespace)
+    # gets the original subject back, so the fold is cosmetic.
+    assert mime["Subject"].replace("\n", "") == subject
