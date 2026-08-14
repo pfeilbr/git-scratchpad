@@ -1,4 +1,5 @@
 import json
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -261,3 +262,68 @@ def test_download_and_export_keep_params_and_support_all_drives(drive, tmp_path)
     assert "mimeType=application%2Fpdf" in url
     assert "supportsAllDrives=true" in url
     assert doc.read_bytes() == b"%PDF-fake"
+
+
+# -- query-string safety ---------------------------------------------------
+#
+# Inside a Drive `q` string literal both `\` and `'` must be escaped, backslash
+# first. A value that escapes neither can close the literal early and change
+# what the query means, so these tests pin the wire format down: pull `q` back
+# out of the request URL and assert on the query the API would actually see.
+
+
+def _q(call) -> str:
+    """The decoded Drive `q` parameter of a recorded request."""
+    return parse_qs(urlsplit(call["url"]).query)["q"][0]
+
+
+def test_ls_escapes_quote_in_folder_id(drive):
+    ft, run = drive
+    ft.add("GET", "drive/v3/files", {"files": []})
+    run("drive", "ls", "fol'der")
+    q = _q(ft.calls[0])
+    assert q == r"'fol\'der' in parents and trashed = false"
+    # the quote is escaped, so it cannot terminate the literal early and the
+    # trailing clauses stay outside of it
+    assert r"\'" in q
+    assert q.endswith("in parents and trashed = false")
+
+
+def test_search_escapes_quote_in_term(drive):
+    ft, run = drive
+    ft.add("GET", "drive/v3/files", {"files": []})
+    run("drive", "search", "it's")
+    assert _q(ft.calls[0]) == r"name contains 'it\'s' and trashed = false"
+
+
+def test_search_trailing_backslash_does_not_escape_closing_quote(drive):
+    ft, run = drive
+    ft.add("GET", "drive/v3/files", {"files": []})
+    run("drive", "search", "back\\")
+    q = _q(ft.calls[0])
+    # the backslash is doubled, so the closing quote stays a closing quote
+    assert q == r"name contains 'back\\' and trashed = false"
+    assert q.endswith("and trashed = false")
+
+
+def test_search_escapes_backslash_before_quote(drive):
+    ft, run = drive
+    ft.add("GET", "drive/v3/files", {"files": []})
+    run("drive", "search", "it's\\")
+    assert _q(ft.calls[0]) == r"name contains 'it\'s\\' and trashed = false"
+
+
+def test_search_plain_term_query_is_unchanged(drive):
+    ft, run = drive
+    ft.add("GET", "drive/v3/files", {"files": []})
+    run("drive", "search", "notes")
+    assert _q(ft.calls[0]) == "name contains 'notes' and trashed = false"
+
+
+def test_search_raw_query_passes_through_unescaped(drive):
+    ft, run = drive
+    ft.add("GET", "drive/v3/files", {"files": []})
+    raw = r"name contains 'it\'s' and mimeType = 'text/plain'"
+    run("drive", "search", raw)
+    # a deliberate raw Drive query is forwarded verbatim, never re-escaped
+    assert _q(ft.calls[0]) == raw

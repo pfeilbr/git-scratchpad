@@ -31,6 +31,16 @@ def _with_shared(params: dict | None = None) -> dict:
     return {**(params or {}), "supportsAllDrives": "true"}
 
 
+def _q_literal(value: str) -> str:
+    """Quote a user-supplied value as a Drive query string literal.
+
+    Drive's `q` syntax escapes `\\` and `'` inside a literal. Backslash goes
+    first: escaping the quote first would leave a trailing `\\` free to escape
+    the closing quote, letting the value run on into the rest of the query.
+    """
+    return "'" + str(value).replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
 def _emit_files(args, query: str, extra_columns: list | None = None) -> int:
     params = _with_shared({"q": query, "fields": FILE_FIELDS})
     params["includeItemsFromAllDrives"] = "true"
@@ -49,14 +59,17 @@ def cmd_drives(args) -> int:
 
 
 def cmd_ls(args) -> int:
-    return _emit_files(args, f"'{args.folder}' in parents and trashed = false")
+    return _emit_files(
+        args, f"{_q_literal(args.folder)} in parents and trashed = false")
 
 
 def cmd_search(args) -> int:
     query = args.query
+    # A query containing `=` or ` contains ` is taken as a raw Drive query and
+    # passed through untouched — it is deliberately written in `q` syntax, so
+    # escaping it would break the operators the caller meant to use.
     if "=" not in query and " contains " not in query:
-        escaped = query.replace("'", "\\'")
-        query = f"name contains '{escaped}' and trashed = false"
+        query = f"name contains {_q_literal(query)} and trashed = false"
     return _emit_files(args, query)
 
 
