@@ -142,6 +142,23 @@ Logged in as you@example.com (services: admin, calendar, chat, contacts, docs, d
 Convenient for a personal machine; prefer an explicit list for shared or
 production credentials.
 
+## When a command fails
+
+API errors keep Google's own wording and add the next step, so you rarely have
+to guess which of the services needs attention:
+
+```console
+$ gsuite gmail search in:inbox
+error: HTTP 403: Request had insufficient authentication scopes. — this token is missing the scopes for that call; re-authorize with `gsuite auth login you@example.com --services gmail`
+$ gsuite auth login you@example.com --services gmail
+```
+
+The service in the suggestion comes from the API the failed call went to, and
+the account is the one that made it. Similar advice is added for a `403`
+naming an API that is not enabled in your Cloud project, for `429` (quota —
+already retried with backoff), and for `401` (credentials rejected — log in
+again). Every other error is passed through untouched.
+
 ## Troubleshooting
 
 `gsuite auth doctor` checks the whole chain and exits non-zero on failure:

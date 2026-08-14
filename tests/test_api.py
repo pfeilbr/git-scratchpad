@@ -134,6 +134,113 @@ def test_401_refresh_flow_does_not_sleep(client, sleeps):
     assert sleeps == []
 
 
+# -- actionable error hints --------------------------------------------------
+
+# Real shapes of Google's 403 bodies: the human message, and the machine
+# reason that carries the same news when the message is less specific.
+SCOPE_403 = {"error": {
+    "code": 403, "status": "PERMISSION_DENIED",
+    "message": "Request had insufficient authentication scopes.",
+    "errors": [{"message": "Insufficient Permission", "reason": "insufficientPermissions"}],
+}}
+SCOPE_403_BY_REASON = {"error": {
+    "code": 403, "status": "PERMISSION_DENIED", "message": "Permission denied.",
+    "details": [{"@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                 "reason": "ACCESS_TOKEN_SCOPE_INSUFFICIENT"}],
+}}
+NOT_ENABLED_403 = {"error": {
+    "code": 403, "status": "PERMISSION_DENIED",
+    "message": ("Google Sheets API has not been used in project 42 before or "
+                "it is disabled."),
+    "errors": [{"reason": "accessNotConfigured"}],
+}}
+
+
+def test_scope_403_names_the_service_and_account(client):
+    c, ft = client
+    ft.add("GET", "gmail.googleapis.com", SCOPE_403, status=403)
+    with pytest.raises(APIError) as exc:
+        c.get("https://gmail.googleapis.com/gmail/v1/users/me/messages")
+    msg = str(exc.value)
+    assert "Request had insufficient authentication scopes." in msg  # Google's own text
+    assert "`gsuite auth login a@x.com --services gmail`" in msg
+
+
+def test_scope_403_on_unknown_host_omits_services(client):
+    c, ft = client
+    ft.add("GET", "example.googleapis.com", SCOPE_403, status=403)
+    with pytest.raises(APIError) as exc:
+        c.get("https://example.googleapis.com/v1/x")
+    msg = str(exc.value)
+    assert "`gsuite auth login a@x.com`" in msg
+    assert "--services" not in msg  # better silent than guessing the wrong one
+
+
+def test_scope_403_tells_drive_and_calendar_apart(client):
+    c, ft = client
+    ft.add("GET", "/drive/v3/files", SCOPE_403_BY_REASON, status=403)
+    ft.add("GET", "/calendar/v3/calendars", SCOPE_403_BY_REASON, status=403)
+    with pytest.raises(APIError) as exc:
+        c.get("https://www.googleapis.com/drive/v3/files")
+    assert "--services drive" in str(exc.value)
+    with pytest.raises(APIError) as exc:
+        c.get("https://www.googleapis.com/calendar/v3/calendars/primary/events")
+    assert "--services calendar" in str(exc.value)
+
+
+def test_scope_403_without_an_account_suggests_bare_login(authed, fake_transport,
+                                                          monkeypatch):
+    monkeypatch.setenv("GSUITE_ACCESS_TOKEN", "env-tok")
+    c = Client(authed, "")  # with $GSUITE_ACCESS_TOKEN there is no account to name
+    fake_transport.add("GET", "sheets.googleapis.com", SCOPE_403, status=403)
+    with pytest.raises(APIError) as exc:
+        c.get("https://sheets.googleapis.com/v4/spreadsheets/s1")
+    assert "`gsuite auth login --services sheets`" in str(exc.value)
+
+
+def test_403_api_not_enabled_suggests_enabling_it(client):
+    c, ft = client
+    ft.add("GET", "sheets.googleapis.com", NOT_ENABLED_403, status=403)
+    with pytest.raises(APIError) as exc:
+        c.get("https://sheets.googleapis.com/v4/spreadsheets/s1")
+    msg = str(exc.value)
+    assert "has not been used in project 42" in msg  # Google's own text
+    assert "Google Cloud console" in msg
+    assert "auth login" not in msg  # re-authorizing would not help here
+
+
+def test_429_after_retries_mentions_quota(client, sleeps):
+    c, ft = client
+    for _ in range(4):
+        ft.add("GET", "/v1/x", {"error": {"message": "Quota exceeded."}}, status=429)
+    with pytest.raises(APIError) as exc:
+        c.get("https://example.googleapis.com/v1/x")
+    msg = str(exc.value)
+    assert "quota" in msg.lower()
+    assert "retried" in msg  # tells the user backoff was already tried
+    assert sleeps == [1, 2, 4]
+
+
+def test_401_suggests_logging_in_again(client):
+    c, ft = client
+    ft.add("GET", "/v1/x", {"error": {"message": "Invalid Credentials"}}, status=401)
+    ft.add("POST", "oauth2.googleapis.com/token",
+           {"access_token": "tok2", "expires_in": 3600})
+    ft.add("GET", "/v1/x", {"error": {"message": "Invalid Credentials"}}, status=401)
+    with pytest.raises(APIError) as exc:
+        c.get("https://example.googleapis.com/v1/x")
+    assert "`gsuite auth login a@x.com`" in str(exc.value)
+
+
+def test_unremarkable_error_message_is_unchanged(client):
+    c, ft = client
+    ft.add("GET", "/v1/x", {"error": {"message": "not found", "code": 404}},
+           status=404)
+    with pytest.raises(APIError) as exc:
+        c.get("https://gmail.googleapis.com/v1/x")
+    assert str(exc.value) == "HTTP 404: not found"
+
+
 # -- readonly mode -----------------------------------------------------------
 
 @pytest.mark.parametrize("method", ["POST", "PATCH", "DELETE"])
