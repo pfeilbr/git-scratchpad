@@ -6,7 +6,7 @@ Search Console: sites, search analytics, URL inspection.
 usage: gsuite searchconsole [-h] <command> ...
 ```
 
-Global flags go *before* the service name: `-a/--account ACCOUNT`, `--json`, `--readonly`, `--csv`, `--fields FIELDS`, `--debug`.
+Global flags go *before* the service name: `-a/--account ACCOUNT`, `--json`, `--readonly`, `--csv`, `--fields FIELDS`, `--debug`, `--timeout TIMEOUT`.
 
 ## Commands
 

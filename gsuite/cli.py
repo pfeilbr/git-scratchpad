@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import math
 import os
 import sys
 
@@ -18,6 +19,8 @@ SERVICE_MODULES: list[str] = ["auth", "gmail", "calendar", "drive", "docs",
                               "chat", "keep", "admin", "forms", "meet",
                               "searchconsole", "analytics", "api",
                               "completion"]
+
+TIMEOUT_ENV = "GSUITE_TIMEOUT"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -51,11 +54,35 @@ def build_parser() -> argparse.ArgumentParser:
         "--debug", action="store_true",
         help="trace HTTP requests and response statuses on stderr",
     )
+    parser.add_argument(
+        "--timeout", metavar="SECONDS",
+        help="seconds to wait on each HTTP request "
+             f"(default: {gsuite.transport.DEFAULT_TIMEOUT:g}, "
+             f"or ${TIMEOUT_ENV})",
+    )
     subparsers = parser.add_subparsers(dest="command", metavar="<service>")
     for name in SERVICE_MODULES:
         module = importlib.import_module(f"gsuite.services.{name}")
         module.register(subparsers)
     return parser
+
+
+def _timeout(args) -> float:
+    """--timeout, else $GSUITE_TIMEOUT, else the transport default."""
+    value, source = getattr(args, "timeout", None), "--timeout"
+    if value is None:
+        value, source = (os.environ.get(TIMEOUT_ENV) or "").strip(), TIMEOUT_ENV
+    if not value:
+        return gsuite.transport.DEFAULT_TIMEOUT
+    try:
+        seconds = float(value)
+    except ValueError:
+        raise CLIError(f"invalid {source} value: {value} "
+                       f"(want seconds, e.g. 30)") from None
+    # `inf`/`nan` parse as floats but blow up inside socket.settimeout().
+    if not (math.isfinite(seconds) and seconds > 0):
+        raise CLIError(f"invalid {source} value: {value} (must be positive)")
+    return seconds
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -68,6 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     if getattr(args, "debug", False):
         gsuite.transport.DEBUG = True
     try:
+        gsuite.transport.TIMEOUT = _timeout(args)
         check_flags(args)
         return func(args) or 0
     except CLIError as exc:

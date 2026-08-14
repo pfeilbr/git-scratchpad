@@ -77,6 +77,30 @@ $ gsuite --debug --json gmail labels list > labels.json
 The trace is metadata only: no request or response bodies, and no headers
 (your bearer token lives in one), so `2> trace.log` is safe to keep.
 
+## Network failures and `--timeout`
+
+A request that never reaches Google — no connectivity, DNS failure,
+connection refused, a TLS problem — is an ordinary operational error, not a
+crash: one `error:` line on stderr and exit 1, safe to test for in a script.
+
+```console
+$ gsuite api call GET https://nonexistent.invalid/x
+error: cannot reach nonexistent.invalid: [Errno -2] Name or service not known
+```
+
+`--timeout SECONDS` (before the service name) caps how long each HTTP request
+may take; it defaults to 30 seconds, and `GSUITE_TIMEOUT` sets the same limit
+for a whole session (the flag wins where both are given). Exceeding it says
+so explicitly, so a wedged cron job fails fast instead of hanging:
+
+```console
+$ gsuite --timeout 5 drive ls
+error: timed out after 5s talking to www.googleapis.com (raise the limit with --timeout SECONDS)
+```
+
+Invalid values (non-numeric, zero or negative) are rejected before anything
+is sent, with the same exit 1.
+
 ## Read-only runs
 
 `--readonly` (before the service name) refuses anything that could modify
