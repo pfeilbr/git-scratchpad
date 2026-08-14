@@ -16,6 +16,35 @@ _sleep = time.sleep
 RETRY_STATUSES = {429, 500, 502, 503, 504}
 MAX_RETRIES = 3
 
+# Which `gsuite auth login --services <name>` covers a given API host, so a
+# scope error can name the one service to re-authorize. Keys are a host, or a
+# host plus path prefix where one host fronts several APIs (www.googleapis.com
+# serves both drive and calendar); the longest matching key wins.
+SERVICE_BY_HOST = {
+    "gmail.googleapis.com": "gmail",
+    "sheets.googleapis.com": "sheets",
+    "docs.googleapis.com": "docs",
+    "slides.googleapis.com": "slides",
+    "people.googleapis.com": "contacts",
+    "tasks.googleapis.com": "tasks",
+    "chat.googleapis.com": "chat",
+    "keep.googleapis.com": "keep",
+    "admin.googleapis.com": "admin",
+    "forms.googleapis.com": "forms",
+    "meet.googleapis.com": "meet",
+    "searchconsole.googleapis.com": "searchconsole",
+    "analyticsdata.googleapis.com": "analytics",
+    "analyticsadmin.googleapis.com": "analytics",
+    "www.googleapis.com/drive": "drive",
+    "www.googleapis.com/upload/drive": "drive",
+    "www.googleapis.com/calendar": "calendar",
+}
+
+# Substrings that identify the two 403s a user can actually act on.
+SCOPE_MARKERS = ("insufficient authentication scopes",
+                 "access_token_scope_insufficient")
+API_DISABLED_MARKERS = ("accessnotconfigured", "has not been used in project")
+
 
 def quote_id(value: str) -> str:
     """Percent-encode an id/email for safe use as a URL path segment."""
@@ -87,7 +116,9 @@ class Client:
                 break
             _sleep(_retry_delay(retry, resp_headers))
         if status >= 400:
-            raise APIError(status, _error_message(body))
+            raise APIError(status,
+                           _error_message(body) + _hint(status, body, url,
+                                                        self.email))
         if raw:
             return body
         return json.loads(body) if body else {}
@@ -136,6 +167,55 @@ def _retry_delay(retry: int, headers: dict) -> int:
             except (TypeError, ValueError):
                 break
     return 2 ** retry
+
+
+def service_for_url(url: str) -> str:
+    """The gsuite service name serving `url`, or "" if the host is unknown."""
+    parts = urllib.parse.urlsplit(url)
+    segments = parts.path.strip("/").split("/")
+    # Try the most specific key first: host + full path, shortening a segment
+    # at a time down to the bare host.
+    for depth in range(len(segments), -1, -1):
+        service = SERVICE_BY_HOST.get("/".join([parts.netloc, *segments[:depth]]))
+        if service:
+            return service
+    return ""
+
+
+def _login_command(email: str, service: str = "") -> str:
+    """`gsuite auth login`, narrowed to the account/service when each is known."""
+    parts = ["gsuite auth login"]
+    if email:
+        parts.append(email)
+    if service:
+        parts.append(f"--services {service}")
+    return " ".join(parts)
+
+
+def _hint(status: int, body: bytes, url: str, email: str) -> str:
+    """The next step for errors a user can fix, appended to Google's own text.
+
+    Google says what went wrong but never what to do about it: which of the
+    services to re-authorize, or that a 403 can mean "API not enabled" rather
+    than "wrong scopes". Statuses with no useful advice get nothing.
+    """
+    text = (body or b"").decode(errors="replace").lower()
+    if status == 401:
+        return (" — those credentials were rejected; run "
+                f"`{_login_command(email)}` to sign in again")
+    if status == 429:
+        return (" — quota exceeded; the request was already retried with "
+                "backoff, so wait before trying again or raise the quota in "
+                "the Google Cloud console")
+    if status == 403:
+        if any(m in text for m in SCOPE_MARKERS):
+            return (" — this token is missing the scopes for that call; "
+                    f"re-authorize with "
+                    f"`{_login_command(email, service_for_url(url))}`")
+        if any(m in text for m in API_DISABLED_MARKERS):
+            return (" — that API is not enabled for your project; enable it "
+                    "in the Google Cloud console under APIs & Services")
+    return ""
 
 
 def _error_message(body: bytes) -> str:
