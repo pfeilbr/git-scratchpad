@@ -96,8 +96,11 @@ def test_events_list_other_calendar(cal):
     run("calendar", "events", "--calendar", "team@group.calendar.google.com")
 
 
-def test_update_sends_only_provided_fields(cal):
+def test_update_sends_only_provided_fields(cal, monkeypatch):
     ft, run = cal
+    # No --tz here, so pin the resolved zone: the body must not depend on
+    # which machine runs the suite.
+    monkeypatch.setattr(calendar_svc, "_local_zone", lambda: ZoneInfo("Asia/Tokyo"))
     ft.add("PATCH", "events/e1", {"id": "e1"})
     out = run("calendar", "update", "e1", "--summary", "New name",
               "--start", "2026-01-05T10:00")
@@ -105,7 +108,8 @@ def test_update_sends_only_provided_fields(cal):
     assert call["method"] == "PATCH"
     body = json.loads(call["data"])
     assert body == {"summary": "New name",
-                    "start": {"dateTime": "2026-01-05T10:00:00"}}
+                    "start": {"dateTime": "2026-01-05T10:00:00",
+                              "timeZone": "Asia/Tokyo"}}
     assert "updated" in out and "e1" in out
 
 
@@ -140,8 +144,11 @@ def test_respond_errors_when_not_an_attendee(cal):
     assert all(c["method"] != "PATCH" for c in ft.calls)
 
 
-def test_freebusy_body_and_output(cal):
+def test_freebusy_body_and_output(cal, monkeypatch):
     ft, run = cal
+    # No --tz here, so pin the resolved zone: the window is a fact about the
+    # user's day, and this test is about the body shape and the rows.
+    monkeypatch.setattr(calendar_svc, "_local_zone", lambda: ZoneInfo("UTC"))
     ft.add("POST", "freeBusy", {"calendars": {
         "primary": {"busy": [
             {"start": "2026-01-05T09:00:00Z", "end": "2026-01-05T09:30:00Z"},
@@ -263,3 +270,60 @@ def test_unknown_timezone_is_a_clean_error(cal):
     assert ft.calls == []
     with pytest.raises(CLIError, match="Mars/Olympus"):
         calendar_svc._zone("Mars/Olympus")
+
+
+def test_freebusy_bare_dates_use_the_requested_zone(cal):
+    ft, run = cal
+    ft.add("POST", "freeBusy", {"calendars": {"primary": {"busy": []}}})
+    run("calendar", "freebusy", "--from", "2026-01-05", "--to", "2026-01-06",
+        "--tz", "America/New_York")
+    body = json.loads(ft.calls[0]["data"])
+    # The window is the user's day, not UTC's: 00:00-05:00, not 00:00Z.
+    assert body["timeMin"] == "2026-01-05T00:00:00-05:00"
+    assert body["timeMax"] == "2026-01-06T00:00:00-05:00"
+
+
+def test_freebusy_without_tz_uses_resolved_local_zone(cal, monkeypatch):
+    ft, run = cal
+    monkeypatch.setattr(calendar_svc, "_local_zone", lambda: ZoneInfo("Asia/Tokyo"))
+    ft.add("POST", "freeBusy", {"calendars": {"primary": {"busy": []}}})
+    run("calendar", "freebusy", "--from", "2026-01-05", "--to", "2026-01-06")
+    body = json.loads(ft.calls[0]["data"])
+    assert body["timeMin"] == "2026-01-05T00:00:00+09:00"
+    assert body["timeMax"] == "2026-01-06T00:00:00+09:00"
+
+
+def test_freebusy_tz_utc_keeps_the_z_form(cal):
+    ft, run = cal
+    ft.add("POST", "freeBusy", {"calendars": {"primary": {"busy": []}}})
+    run("calendar", "freebusy", "--from", "2026-01-05",
+        "--to", "2026-01-06T12:30:00Z", "--tz", "UTC")
+    body = json.loads(ft.calls[0]["data"])
+    # Asking for UTC still yields exactly what freebusy always sent.
+    assert body["timeMin"] == "2026-01-05T00:00:00Z"
+    # ...and an explicit instant is already unambiguous — leave it alone.
+    assert body["timeMax"] == "2026-01-06T12:30:00Z"
+
+
+def test_update_timed_start_declares_its_timezone(cal):
+    ft, run = cal
+    ft.add("PATCH", "events/e1", {"id": "e1"})
+    run("calendar", "update", "e1", "--start", "2026-01-05T10:00",
+        "--end", "2026-01-05T11:00", "--tz", "America/New_York")
+    body = json.loads(ft.calls[0]["data"])
+    # A naive dateTime would be read in the calendar's own zone, not the
+    # caller's — name the zone the same way create does.
+    assert body == {"start": {"dateTime": "2026-01-05T10:00:00",
+                              "timeZone": "America/New_York"},
+                    "end": {"dateTime": "2026-01-05T11:00:00",
+                            "timeZone": "America/New_York"}}
+
+
+def test_update_all_day_start_stays_a_bare_date(cal):
+    ft, run = cal
+    ft.add("PATCH", "events/e1", {"id": "e1"})
+    run("calendar", "update", "e1", "--start", "2026-01-05",
+        "--tz", "America/New_York")
+    body = json.loads(ft.calls[0]["data"])
+    # An all-day date names no zone, whatever --tz says.
+    assert body == {"start": {"date": "2026-01-05"}}
