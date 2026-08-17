@@ -40,17 +40,44 @@ dependencies** (Python ≥ 3.10 standard library only).
   Credentials. Service-account keys are deliberately unsupported (RS256
   signing would require a third-party dependency) and fail with a clear
   message.
+- `auth logout` revokes the grant at Google before removing anything local,
+  so a recovered copy of the token file is useless; `--no-revoke` opts out and
+  `auth revoke` rotates a credential without dropping the account.
+- Config lives at `$GSUITE_CONFIG_DIR`, else `%APPDATA%\gsuite` on Windows,
+  else `$XDG_CONFIG_HOME/gsuite`, else `~/.config/gsuite`.
 
 ### Output and safety
 
 - Aligned tables by default; `--json`, `--csv`, and `--fields` to select
   columns; `--debug` traces HTTP metadata to stderr without leaking bodies or
-  the bearer token.
-- `--readonly` refuses any non-GET at the single client chokepoint.
+  the bearer token; `--timeout SECONDS` (or `GSUITE_TIMEOUT`) caps each
+  request.
+- `--readonly` refuses any non-GET at the single client chokepoint, before
+  credentials are even resolved.
 - Transient 429/5xx responses retry with 1/2/4s backoff honoring
   `Retry-After`; a 401 forces one token refresh and retry.
+- API errors keep Google's wording and add the next step — a scope failure
+  names the service and the exact `auth login` command to run.
 - Exits like a UNIX filter: quiet on a closed pipe, `1` for operational
-  errors, `2` for usage errors, `130` on interrupt.
+  errors, `2` for usage errors, `130` on interrupt. Network failures (DNS,
+  refused connections, TLS, timeouts) are `error:` lines, never tracebacks.
+
+### Correctness and hardening
+
+- Dates resolve in the local timezone (or `--tz`): day bounds were computed
+  at UTC midnight, so `agenda` showed the wrong window everywhere but UTC.
+  Timed events now carry an explicit `timeZone`.
+- Values interpolated into Drive `q` queries are escaped (backslash first,
+  then quote), so a folder id or search term containing a quote can no longer
+  change the query's meaning.
+- Header values containing a line break are refused with a named error;
+  previously a trailing newline was silently encoded into a corrupt address
+  and sent.
+- Credential files are *created* `0600` inside `0700` directories rather than
+  tightened afterwards, and every write is atomic (`os.replace`), so an
+  interrupted run cannot leave an unparseable `accounts.json`.
+- `api call` keeps repeated `--param` keys and prints non-JSON replies
+  instead of raising.
 
 ### Engineering
 

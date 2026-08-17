@@ -52,16 +52,20 @@ def _plain_body(payload: dict) -> str:
 def _header(label: str, value: str) -> str:
     """Return `value` if it is safe to store in a header, else raise.
 
-    A CR or LF in a header value is header injection: it can smuggle extra
+    A line break in a header value is header injection: it can smuggle extra
     headers (a hidden `Bcc:`) or end the header block early. `email` refuses
     most of these itself, but with a bare ValueError (a traceback, not a
     CLI error) and it lets a *trailing* CR/LF through, which is then silently
     RFC 2047-encoded into a corrupt address. Reject both, naming the source.
 
-    Only headers are checked: newlines in a message body are normal.
+    The test is `splitlines()` rather than a CR/LF scan because that is the
+    same rule `email` applies: it also splits on the vertical tab, form feed,
+    NEL and the Unicode line/paragraph separators, each of which otherwise
+    reached the library and raised. An empty value is fine — an empty subject
+    is ordinary — and only headers are checked: newlines in a body are normal.
     """
-    if "\r" in value or "\n" in value:
-        raise CLIError(f"{label} may not contain a carriage return or newline")
+    if value and value.splitlines() != [value]:
+        raise CLIError(f"{label} may not contain a line break")
     return value
 
 

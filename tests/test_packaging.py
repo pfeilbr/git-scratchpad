@@ -83,3 +83,20 @@ def test_changelog_covers_the_current_version():
     changelog = _read("CHANGELOG.md")
     assert f"## {__version__}" in changelog, \
         f"CHANGELOG has no entry for the packaged version {__version__}"
+
+
+def test_changelog_records_every_service():
+    """A service that ships without a changelog line is a release-notes bug."""
+    from gsuite.cli import SERVICE_MODULES
+
+    changelog = _read("CHANGELOG.md")
+    missing = [s for s in SERVICE_MODULES if s not in changelog]
+    assert not missing, f"CHANGELOG never mentions: {', '.join(missing)}"
+
+
+def test_changelog_covers_the_shipped_capabilities():
+    """Pin the flags and commands a user is told about elsewhere."""
+    changelog = _read("CHANGELOG.md")
+    for capability in ("--timeout", "auth revoke", "--csv", "--fields",
+                       "XDG_CONFIG_HOME", "atomic"):
+        assert capability in changelog, f"CHANGELOG never mentions {capability}"

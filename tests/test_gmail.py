@@ -556,3 +556,32 @@ def test_send_allows_long_subject_that_the_library_folds(gmail):
     # Unfolding (dropping the inserted newline, keeping the fold whitespace)
     # gets the original subject back, so the fold is cosmetic.
     assert mime["Subject"].replace("\n", "") == subject
+
+
+@pytest.mark.parametrize("separator, name", [
+    ("\x0b", "vertical tab"),
+    ("\x0c", "form feed"),
+    (" ", "unicode line separator"),
+    (" ", "unicode paragraph separator"),
+    ("\x85", "next line"),
+])
+def test_unusual_line_separators_are_errors_not_tracebacks(separator, name):
+    """`email` splits on more than CR/LF, and refuses all of them.
+
+    Rejecting only CR/LF left the rest raising a bare ValueError straight
+    past main()'s handler — a traceback where an error message belongs.
+    """
+    from gsuite.errors import CLIError
+    from gsuite.services.gmail import _build_mime
+
+    with pytest.raises(CLIError, match="--to"):
+        _build_mime(f"a@x.com{separator}Bcc: evil@example.com", "s", "b")
+    with pytest.raises(CLIError, match="--subject"):
+        _build_mime("a@x.com", f"subject{separator}injected", "b")
+
+
+def test_empty_header_values_are_still_allowed():
+    """An empty subject is ordinary; only line breaks are refused."""
+    from gsuite.services.gmail import _build_mime
+
+    assert _build_mime("a@x.com", "", "body")  # must not raise
