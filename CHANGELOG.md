@@ -54,8 +54,12 @@ dependencies** (Python ≥ 3.10 standard library only).
   request.
 - `--readonly` refuses any non-GET at the single client chokepoint, before
   credentials are even resolved.
-- Transient 429/5xx responses retry with 1/2/4s backoff honoring
-  `Retry-After`; a 401 forces one token refresh and retry.
+- Transient failures retry with 1/2/4s backoff honoring `Retry-After`: a 429
+  for any command, a 5xx only for reads and idempotent writes. A `POST` or
+  `PATCH` that hits a 5xx is never replayed, since the request may already
+  have been applied. A 401 forces one token refresh and retry.
+- Filesystem paths the user names (`--attach`, `upload`, `-o`) report a
+  missing file or unwritable destination as an error, not a traceback.
 - API errors keep Google's wording and add the next step — a scope failure
   names the service and the exact `auth login` command to run.
 - Exits like a UNIX filter: quiet on a closed pipe, `1` for operational

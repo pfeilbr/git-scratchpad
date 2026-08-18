@@ -34,6 +34,22 @@ class FakeTransport:
         raise AssertionError(f"unexpected request: {method} {url}")
 
 
+@pytest.fixture(autouse=True)
+def no_ambient_credentials(tmp_path, monkeypatch):
+    """No test may inherit the developer's real credentials.
+
+    `$GSUITE_ACCESS_TOKEN` short-circuits token resolution and ADC is read
+    from the home directory, so a machine where either is set — and the
+    authentication guide tells people to set the first one — would otherwise
+    fail tests for reasons unrelated to the code under test, or worse, reach
+    a real account. Autouse so it cannot be forgotten in a new test file.
+    """
+    monkeypatch.delenv("GSUITE_ACCESS_TOKEN", raising=False)
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS",
+                       str(tmp_path / "no-such-adc.json"))
+    monkeypatch.setenv("HOME", str(tmp_path / "no-such-home"))
+
+
 @pytest.fixture
 def config_dir(tmp_path, monkeypatch):
     d = tmp_path / "gsuite-config"

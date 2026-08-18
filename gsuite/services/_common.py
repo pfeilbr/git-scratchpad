@@ -1,6 +1,7 @@
 """Shared idioms for service command handlers."""
 from __future__ import annotations
 
+import os
 import urllib.parse
 
 from gsuite.api import Client
@@ -40,6 +41,40 @@ def resource_path(value: str) -> str:
         raise CLIError(f"invalid resource name {value!r}: "
                        "'.' and '..' path segments are not allowed")
     return urllib.parse.quote(value, safe="/")
+
+
+def read_file(path: str) -> bytes:
+    """Read a file the user named, as bytes.
+
+    Paths come off the command line — `gmail send --attach`, `drive upload` —
+    so a typo, a missing directory or a permission problem is ordinary user
+    error, not a bug. Bare `open()` raised OSError straight past main()'s
+    handler and printed a traceback; this reports it like every other
+    operational failure.
+    """
+    try:
+        with open(path, "rb") as fh:
+            return fh.read()
+    except OSError as exc:
+        raise CLIError(f"cannot read {path}: {exc.strerror or exc}") from exc
+
+
+def make_dir(path: str) -> None:
+    """Create an output directory the user named, parents included."""
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError as exc:
+        raise CLIError(
+            f"cannot create directory {path}: {exc.strerror or exc}") from exc
+
+
+def write_file(path: str, data: bytes) -> None:
+    """Write bytes to a file the user named. See `read_file` for the why."""
+    try:
+        with open(path, "wb") as fh:
+            fh.write(data)
+    except OSError as exc:
+        raise CLIError(f"cannot write {path}: {exc.strerror or exc}") from exc
 
 
 def emit_paged(args, url: str, columns: list[tuple], *, params: dict | None = None,

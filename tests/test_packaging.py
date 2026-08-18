@@ -100,3 +100,18 @@ def test_changelog_covers_the_shipped_capabilities():
     for capability in ("--timeout", "auth revoke", "--csv", "--fields",
                        "XDG_CONFIG_HOME", "atomic"):
         assert capability in changelog, f"CHANGELOG never mentions {capability}"
+
+
+def test_suite_is_hermetic_against_ambient_credentials():
+    """A developer with GSUITE_ACCESS_TOKEN exported must still get green.
+
+    The authentication guide tells people to set exactly that variable, and
+    it short-circuits token resolution, so without an isolation fixture the
+    401-refresh tests fail for a reason that has nothing to do with the code.
+    """
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests/test_api.py", "-q", "--tb=no"],
+        cwd=ROOT, capture_output=True, text=True,
+        env={**os.environ, "PYTHONPATH": ROOT,
+             "GSUITE_ACCESS_TOKEN": "ambient-leaked-token"})
+    assert result.returncode == 0, result.stdout[-2000:]

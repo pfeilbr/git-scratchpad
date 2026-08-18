@@ -10,7 +10,7 @@ from gsuite.api import Client, quote_id
 from gsuite.cmdreg import Cmd, arg, max_flag, register_service
 from gsuite.errors import CLIError
 from gsuite.output import confirm, emit, emit_obj
-from gsuite.services._common import emit_paged
+from gsuite.services._common import emit_paged, read_file, write_file
 
 BASE = "https://www.googleapis.com/drive/v3"
 UPLOAD_BASE = "https://www.googleapis.com/upload/drive/v3"
@@ -150,8 +150,7 @@ def _multipart_related(metadata: dict, content: bytes, mime: str) -> tuple[bytes
 def cmd_upload(args) -> int:
     name = args.name or os.path.basename(args.file)
     mime = args.mime or mimetypes.guess_type(name)[0] or "application/octet-stream"
-    with open(args.file, "rb") as fh:
-        content = fh.read()
+    content = read_file(args.file)
     metadata: dict = {"name": name}
     if args.parent:
         metadata["parents"] = [args.parent]
@@ -165,8 +164,7 @@ def cmd_upload(args) -> int:
 
 def _write_out(data: bytes, out_path: str | None) -> None:
     if out_path and out_path != "-":
-        with open(out_path, "wb") as fh:
-            fh.write(data)
+        write_file(out_path, data)
         print(f"wrote {len(data)} bytes to {out_path}")
     else:
         sys.stdout.buffer.write(data)

@@ -14,6 +14,7 @@ from gsuite.api import Client, quote_id
 from gsuite.cmdreg import Cmd, Group, arg, max_flag, register_service
 from gsuite.errors import CLIError
 from gsuite.output import confirm, emit, emit_obj
+from gsuite.services._common import make_dir, read_file, write_file
 
 BASE = "https://gmail.googleapis.com/gmail/v1/users/me"
 
@@ -87,9 +88,9 @@ def _build_mime(to: str, subject: str, body: str, cc: str | None = None,
     for path in attachments or []:
         ctype, _ = mimetypes.guess_type(path)
         maintype, _, subtype = (ctype or "application/octet-stream").partition("/")
-        with open(path, "rb") as fh:
-            msg.add_attachment(fh.read(), maintype=maintype, subtype=subtype,
-                               filename=os.path.basename(path))
+        msg.add_attachment(read_file(path), maintype=maintype,
+                           subtype=subtype,
+                           filename=os.path.basename(path))
     return base64.urlsafe_b64encode(msg.as_bytes()).decode()
 
 
@@ -171,14 +172,13 @@ def cmd_attachments(args) -> int:
                      "size": p.get("body", {}).get("size", "")} for p in parts],
              [("FILENAME", "filename"), ("MIME", "mime"), ("SIZE", "size")])
         return 0
-    os.makedirs(args.output, exist_ok=True)
+    make_dir(args.output)
     for part in parts:
         att_id = part["body"]["attachmentId"]
         att = client.get(f"{BASE}/messages/{quote_id(args.id)}/attachments/{quote_id(att_id)}")
         data = _b64u_bytes(att.get("data", ""))
         path = os.path.join(args.output, os.path.basename(part["filename"]))
-        with open(path, "wb") as fh:
-            fh.write(data)
+        write_file(path, data)
         print(f"wrote {len(data)} bytes to {path}")
     return 0
 
