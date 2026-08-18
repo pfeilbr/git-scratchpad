@@ -127,3 +127,110 @@ def test_root_flags_are_global(capsys):
     assert args.fields == "a,b"
     assert args.csv is True
     assert args.debug is True
+
+
+# -- display width -----------------------------------------------------------
+
+# The tests' own yardstick, deliberately independent of gsuite.output: the
+# terminal cell count of every character used below, written out by hand, so
+# the alignment assertions are about how the table renders rather than about
+# how emit() happens to measure it.
+TWO_CELLS = set("会議の事録日本語\uff21\U0001f35c")  # CJK, fullwidth A, emoji
+NO_CELLS = {"\u0301", "\u200b"}  # combining acute, zero-width space
+
+
+def cells(text):
+    """Terminal cells `text` occupies, by hand-checked character."""
+    return sum(0 if ch in NO_CELLS else 2 if ch in TWO_CELLS else 1
+               for ch in text)
+
+
+def owner_offsets(out, rows):
+    """Display cells preceding the OWNER column, on the header and each row."""
+    values = ["OWNER"] + [row["owner"] for row in rows]
+    return {cells(line[:line.index(value)])
+            for line, value in zip(out.splitlines(), values)}
+
+
+WIDE_COLUMNS = [("NAME", "name"), ("OWNER", "owner")]
+WIDE_ROWS = [{"name": "Quarterly report", "owner": "ann@x.com"},
+             {"name": "会議の議事録", "owner": "kenji@x.com"},
+             {"name": "日本語", "owner": "yui@x.com"}]
+EMOJI_ROWS = [{"name": "Lunch \U0001f35c plans", "owner": "ann@x.com"},
+              {"name": "Quarterly report", "owner": "bo@x.com"}]
+# "Cafe" + U+0301: fourteen code points, but only thirteen terminal cells.
+COMBINING_ROWS = [{"name": "Cafe\u0301 receipts", "owner": "ann@x.com"},
+                  {"name": "Diner receipts", "owner": "bob@x.com"}]
+
+
+def test_display_width_counts_terminal_cells_not_code_points():
+    from gsuite.output import display_width
+
+    assert display_width("") == 0
+    assert display_width("abc") == 3
+    assert display_width("会") == 2  # East Asian Wide
+    assert display_width("\uff21") == 2  # fullwidth latin A
+    assert display_width("e\u0301") == 1  # e + combining acute
+    assert display_width("\U0001f35c") == 2  # emoji
+    assert display_width("a\u200bb") == 2  # zero-width space
+
+
+def test_cjk_rows_start_the_next_column_at_the_same_offset(capsys):
+    emit(Args(), WIDE_ROWS, WIDE_COLUMNS)
+    offsets = owner_offsets(capsys.readouterr().out, WIDE_ROWS)
+    assert len(offsets) == 1, f"OWNER starts at cells {sorted(offsets)}"
+
+
+def test_emoji_rows_start_the_next_column_at_the_same_offset(capsys):
+    emit(Args(), EMOJI_ROWS, WIDE_COLUMNS)
+    offsets = owner_offsets(capsys.readouterr().out, EMOJI_ROWS)
+    assert len(offsets) == 1, f"OWNER starts at cells {sorted(offsets)}"
+
+
+def test_a_combining_mark_row_is_not_padded_short(capsys):
+    emit(Args(), COMBINING_ROWS, WIDE_COLUMNS)
+    out = capsys.readouterr().out
+    assert len(owner_offsets(out, COMBINING_ROWS)) == 1
+    # The accented row holds one more code point than it draws cells, so
+    # padding it by len() leaves it a cell shy of its plain-ASCII neighbour
+    # (the two owners are the same width, so the whole lines must match).
+    accented, plain = out.splitlines()[1:3]
+    assert cells(accented) == cells(plain)
+
+
+# -- regression pins ---------------------------------------------------------
+
+WIDE_JSON = ('[\n'
+             '  {\n'
+             '    "name": "Quarterly report",\n'
+             '    "owner": "ann@x.com"\n'
+             '  },\n'
+             '  {\n'
+             '    "name": "\\u4f1a\\u8b70\\u306e\\u8b70\\u4e8b\\u9332",\n'
+             '    "owner": "kenji@x.com"\n'
+             '  },\n'
+             '  {\n'
+             '    "name": "\\u65e5\\u672c\\u8a9e",\n'
+             '    "owner": "yui@x.com"\n'
+             '  }\n'
+             ']\n')
+
+
+def test_wide_characters_leave_csv_and_json_bytes_untouched(capsys):
+    """Padding is a table-only concern: the machine shapes never pad."""
+    emit(Args(csv_mode=True), WIDE_ROWS, WIDE_COLUMNS)
+    assert capsys.readouterr().out == (
+        "NAME,OWNER\r\n"
+        "Quarterly report,ann@x.com\r\n"
+        "会議の議事録,kenji@x.com\r\n"
+        "日本語,yui@x.com\r\n")
+    emit(Args(json_mode=True), WIDE_ROWS, WIDE_COLUMNS)
+    assert capsys.readouterr().out == WIDE_JSON
+
+
+def test_pure_ascii_table_is_byte_identical(capsys):
+    """A table of one-cell characters lays out exactly as it always has."""
+    emit(Args(), ROWS, COLUMNS)
+    assert capsys.readouterr().out == ("ID  NAME           TYPE\n"
+                                       "1   alpha          system\n"
+                                       "22  b, with comma  user\n")
