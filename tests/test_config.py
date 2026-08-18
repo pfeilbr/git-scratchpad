@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 
 import pytest
@@ -299,8 +300,8 @@ def test_a_failed_publish_leaves_the_previous_accounts_file_intact(store, monkey
 
     assert store._accounts_path().read_bytes() == before
     assert [a["email"] for a in store.list_accounts()] == ["keeper@example.com"]
-    assert [p.name for p in store.root.iterdir()] == ["accounts.json"], \
-        "a temp file was left behind"
+    assert sorted(p.name for p in store.root.iterdir()) == \
+        ["accounts.json", "accounts.json.lock"], "a temp file was left behind"
 
 
 def test_a_failed_serialization_leaves_the_previous_accounts_file_intact(store):
@@ -413,3 +414,249 @@ def test_ordinary_account_flows_are_unchanged(run_cli, config_dir):
     run_cli("auth", "switch", "me")
     assert ConfigStore().default_account() == "b@example.com"
     assert ConfigStore().load_token("a@example.com")["refresh_token"] == "r"
+
+
+# -- concurrent mutation ----------------------------------------------------
+#
+# Two gsuite runs can mutate accounts.json at the same time: `gsuite auth login
+# a@x.com` and `... b@x.com` from two shells, or a loop doing `alias set` in
+# parallel. Atomic writes keep the file parseable but do nothing about the lost
+# update — both runs read the same store, both write their own edit back, and
+# the loser's account is simply gone.
+#
+# None of these tests race two threads and hope. The interleaving is pinned
+# with events, and every wait is bounded, so a regression fails the suite
+# instead of hanging it. Two ConfigStore instances on one root stand in for two
+# processes; the last test uses real ones.
+
+JOIN_TIMEOUT = 10.0     # only ever reached when something is genuinely wedged
+HELD_LOCK_PROBE = 0.3   # long enough to show a waiter really is still waiting
+PAUSED_WRITE_GRACE = 1.0  # see test_a_paused_write_cannot_clobber...
+LOCK_NAME = "accounts.json.lock"
+
+
+def _spawn(fn, errors):
+    """Run `fn` in a daemon thread, capturing whatever it raises."""
+
+    def body():
+        try:
+            fn()
+        except BaseException as exc:  # never swallowed; asserted on by callers
+            errors.append(exc)
+
+    thread = threading.Thread(target=body, daemon=True)
+    thread.start()
+    return thread
+
+
+def _lock_of(store):
+    held = getattr(store, "_locked", None)
+    assert held is not None, "ConfigStore has no account-store lock"
+    return held
+
+
+def test_a_paused_write_cannot_clobber_a_concurrent_addition(tmp_path):
+    """The lost update, pinned deterministically rather than raced.
+
+    Run A is stopped between its read and its write; run B is only then let
+    loose. Without serialization B's account reaches disk and is immediately
+    overwritten by A's stale copy, and exactly one of the two survives. With
+    the read-modify-write serialized B cannot start until A is finished, so
+    B's own read already contains a@x.com and both survive.
+
+    A's pause is bounded on purpose: after the fix B never completes while A
+    holds the lock, so A has to be able to stop waiting and go on. Nothing
+    here can deadlock, before the fix or after it.
+    """
+    root = tmp_path / "cfg"
+    a, b = ConfigStore(root), ConfigStore(root)
+    at_write, b_done, errors = threading.Event(), threading.Event(), []
+    real_write = a._write
+
+    def paused_write(data):
+        at_write.set()
+        b_done.wait(PAUSED_WRITE_GRACE)
+        real_write(data)
+
+    a._write = paused_write  # only run A pauses; run B is an ordinary store
+    ta = _spawn(lambda: a.add_account("a@x.com"), errors)
+    assert at_write.wait(JOIN_TIMEOUT), "run A never reached its write"
+
+    def run_b():
+        b.add_account("b@x.com")
+        b_done.set()
+
+    tb = _spawn(run_b, errors)
+    tb.join(JOIN_TIMEOUT)
+    ta.join(JOIN_TIMEOUT)
+    assert not (ta.is_alive() or tb.is_alive()), "a run never finished"
+    assert errors == [], f"a run raised: {errors}"
+    assert [x["email"] for x in ConfigStore(root).list_accounts()] == \
+        ["a@x.com", "b@x.com"], "one login overwrote the other"
+
+
+def test_a_second_mutation_waits_for_a_held_lock_and_then_composes(tmp_path):
+    """A mutation that arrives mid-write waits, then edits what it finds.
+
+    The lock is held open for the length of the `with`, so the waiter's state
+    is observable rather than inferred: it is still running, and it has not
+    published anything, until the holder lets go.
+    """
+    root = tmp_path / "cfg"
+    a, b = ConfigStore(root), ConfigStore(root)
+    a.add_account("a@x.com")
+    errors = []
+    with _lock_of(a)():
+        t = _spawn(lambda: b.add_account("b@x.com"), errors)
+        t.join(HELD_LOCK_PROBE)
+        assert t.is_alive(), "the second mutation did not wait for the lock"
+        during = [x["email"] for x in ConfigStore(root).list_accounts()]
+    t.join(JOIN_TIMEOUT)
+    assert not t.is_alive(), "the waiter never got the lock"
+    assert errors == [], f"the waiter raised: {errors}"
+    assert during == ["a@x.com"], "a waiter published its write early"
+    assert [x["email"] for x in ConfigStore(root).list_accounts()] == \
+        ["a@x.com", "b@x.com"]
+
+
+def test_a_lock_held_past_the_timeout_raises_a_cli_error_naming_it(
+        tmp_path, monkeypatch):
+    """A wedged holder must not wedge everyone else forever.
+
+    A process that dies drops its lock with its file handle, but one that
+    hangs (a stuck OAuth flow, a suspended shell job) keeps it. The wait is
+    bounded and the error has to be actionable on its own: which file, and
+    what to do about it.
+    """
+    root = tmp_path / "cfg"
+    a, b = ConfigStore(root), ConfigStore(root)
+    a.add_account("a@x.com")
+    held = _lock_of(a)
+    monkeypatch.setattr(gsuite.config, "LOCK_TIMEOUT", 0.2)
+    errors = []
+    with held():
+        t = _spawn(lambda: b.add_account("b@x.com"), errors)
+        t.join(JOIN_TIMEOUT)
+        assert not t.is_alive(), "a stale lock wedged the CLI"
+    assert len(errors) == 1, f"expected one failure, got {errors}"
+    message = str(errors[0])
+    assert isinstance(errors[0], CLIError), f"not a CLIError: {errors[0]!r}"
+    assert LOCK_NAME in message, f"the error does not name the lock file: {message}"
+    assert "remove" in message.lower(), f"no way out of it: {message}"
+
+
+def test_reads_never_block_on_the_write_lock(tmp_path):
+    """`gsuite auth list` must not hang behind someone else's login.
+
+    Readers take no lock at all: the atomic replace already hands them either
+    the old store or the new one, never a torn one.
+    """
+    root = tmp_path / "cfg"
+    a = ConfigStore(root)
+    a.add_account("a@x.com")
+    a.set_alias("me", "a@x.com")
+    reader = ConfigStore(root)
+    seen, done, errors = {}, threading.Event(), []
+
+    def read_everything():
+        seen["list"] = [x["email"] for x in reader.list_accounts()]
+        seen["resolve"] = reader.resolve("me")
+        seen["default"] = reader.default_account()
+        done.set()
+
+    with _lock_of(a)():
+        t = _spawn(read_everything, errors)
+        assert done.wait(HELD_LOCK_PROBE * 3), \
+            "a read blocked behind the write lock"
+    t.join(JOIN_TIMEOUT)
+    assert errors == [], f"the reader raised: {errors}"
+    assert seen == {"list": ["a@x.com"], "resolve": "a@x.com",
+                    "default": "a@x.com"}
+
+
+def test_the_lock_file_is_private_and_beside_the_account_store(store):
+    """Where the lock lives, how it is created, and that it stays put.
+
+    It is a file of its own rather than accounts.json itself, because
+    `_write_atomic()` replaces that file — a lock taken on it would sit on an
+    inode no later run can even name. Deleting the lock file after use has the
+    same flaw, so it is created once and left alone; the inode check is what
+    pins that.
+    """
+    with pinned_umask():
+        store.add_account("a@example.com")
+    lock = store.root / LOCK_NAME
+    assert lock.exists(), "no lock file beside accounts.json"
+    assert [x["email"] for x in store.list_accounts()] == ["a@example.com"], \
+        "the lock file confused the store itself"
+    if gsuite.config._windows():  # POSIX mode bits and inodes: not a thing
+        return
+    assert mode_of(lock) == 0o600, "the lock file is not owner-only"
+    assert mode_of(store.root) == 0o700
+    inode = lock.stat().st_ino
+    with pinned_umask():
+        store.set_alias("me", "a@example.com")
+    assert lock.stat().st_ino == inode, \
+        "the lock file was recreated — a lock on an unlinked inode excludes nobody"
+
+
+def test_every_mutator_still_composes_in_a_single_process(store):
+    """All five mutating calls in sequence, one after another, one process.
+
+    (Green before the fix too — a regression pin: serializing the
+    read-modify-write must not change what any of them actually does.)
+    """
+    store.add_account("a@example.com", services=["gmail"])
+    store.add_account("b@example.com", services=["drive"])
+    store.set_alias("me", "b@example.com")
+    store.set_alias("other", "a@example.com")
+    store.set_default("b@example.com")
+    store.remove_alias("other")
+    store.remove_account("a@example.com")
+    assert [x["email"] for x in store.list_accounts()] == ["b@example.com"]
+    assert store.default_account() == "b@example.com"
+    assert store.resolve("me") == "b@example.com"
+    with pytest.raises(CLIError):
+        store.resolve("other")
+
+
+CHILD_ADDS_ACCOUNT = '''\
+"""Add one account at a start time shared with every sibling process."""
+import sys
+import time
+
+sys.path.insert(0, sys.argv[1])
+from gsuite.config import ConfigStore
+
+time.sleep(max(0.0, float(sys.argv[4]) - time.time()))
+ConfigStore(sys.argv[2]).add_account(sys.argv[3])
+'''
+
+
+def test_six_real_processes_logging_in_at_once_all_survive(tmp_path):
+    """The actual scenario, with actual processes.
+
+    Robust by construction rather than by timing: the assertion is that every
+    account survives, which serialization guarantees however the six happen to
+    interleave. (Before the fix it fails whenever any two overlap — most runs,
+    but not reliably every run, which is why the tests above are the ones that
+    pin the bug.)
+    """
+    cfg = tmp_path / "cfg"
+    script = tmp_path / "child.py"
+    script.write_text(CHILD_ADDS_ACCOUNT, encoding="utf-8")
+    emails = [f"user{n}@example.com" for n in range(6)]
+    start = time.time() + 1.0  # all six are up and waiting before any of them writes
+    procs = [
+        subprocess.Popen(
+            [sys.executable, str(script), ROOT, str(cfg), email, repr(start)],
+            stderr=subprocess.PIPE, text=True)
+        for email in emails
+    ]
+    failures = []
+    for proc, email in zip(procs, emails):
+        _, err = proc.communicate(timeout=60)
+        if proc.returncode != 0:
+            failures.append(f"{email}: {err.strip()}")
+    assert failures == [], "\n".join(failures)
+    assert [x["email"] for x in ConfigStore(cfg).list_accounts()] == emails

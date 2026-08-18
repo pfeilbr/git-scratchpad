@@ -136,6 +136,7 @@ set to the empty string counts as unset):
 ```text
 ~/.config/gsuite/            (the default; see the resolution order above)  0700
 ├── accounts.json            accounts, aliases, default account             0600
+├── accounts.json.lock       serializes edits to accounts.json (empty)      0600
 ├── client.json              OAuth client id/secret (Desktop app)           0600
 └── tokens/                                                                 0700
     └── you@example.com.json access + refresh token                         0600
@@ -158,6 +159,21 @@ all the same way (`_ensure_private_dir()` + `_write_atomic()`):
   never a truncated `accounts.json` that no later command can parse. Should one
   turn up anyway (a hand-edit, a bad restore), reading it raises `CLIError`
   naming the file, not a `JSONDecodeError` traceback.
+- **Edits to `accounts.json` are serialized.** An atomic write stops the file
+  being torn, not being clobbered: two `gsuite auth login`s that read the same
+  store both write their own copy back, and one of the two accounts simply
+  disappears. Every read-modify-write of it therefore runs inside
+  `ConfigStore._locked()`, which holds an exclusive lock on `accounts.json.lock`
+  for the whole read-edit-write — so the second run waits, then re-reads what
+  the first published and adds its change on top of it. The lock is a sidecar
+  file rather than `accounts.json` itself because `os.replace()` swaps that
+  inode out from under any lock held on it, and it is never deleted, because a
+  lock on an unlinked inode excludes nobody. `fcntl.flock` on POSIX,
+  `msvcrt.locking` on Windows: the same shape of guarantee, though only the
+  POSIX path is covered by the tests. Readers take no lock at all — `gsuite
+  auth list` never waits behind a login — and the wait is capped at five
+  seconds, so a holder that hangs rather than exits raises a `CLIError` naming
+  the lock file instead of wedging the CLI forever.
 - **Text is UTF-8**, explicitly, on every read and write: JSON is UTF-8 by spec,
   while `read_text()`/`write_text()` would otherwise use the platform encoding
   and mangle non-ASCII account names on a Western Windows box (cp1252).
