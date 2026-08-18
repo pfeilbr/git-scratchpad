@@ -43,6 +43,48 @@ Logged in as you@example.com (services: calendar, contacts, drive, gmail)
   and are refreshed automatically (60 s before expiry, plus a self-healing
   retry on 401).
 
+### Partial consent
+
+Google's consent screen has a checkbox per permission, and unticking one is
+allowed — approving Gmail while declining "See and download your Drive files"
+is an ordinary thing to do (and some Workspace policies do it for you). The
+token that comes back then covers *less* than gsuite asked for.
+
+gsuite records what was **granted**, not what was requested, and says so:
+
+```console
+$ gsuite auth login you@example.com --services gmail,drive
+Logged in as you@example.com (services: gmail)
+warning: consent was partial — Google did not grant: drive
+  Commands for drive will fail with HTTP 403 until you re-authorize and approve every box:
+  gsuite auth login you@example.com --services gmail,drive
+```
+
+The login still exits `0` — it succeeded, it just covers less — and
+`auth list` shows the reduced set rather than claiming an authorization you do
+not have:
+
+```console
+$ gsuite auth list
+* you@example.com  token:valid  services:gmail
+```
+
+The fix is to log in again and approve every box; `--services` may of course
+be narrowed instead, if you decided you did not want Drive after all.
+`auth doctor` re-checks this on every run, so a partial grant stays visible
+long after the login output has scrolled away (an account authorized by an
+older gsuite, which stored the requested scopes, is re-checked here too):
+
+```console
+$ gsuite auth doctor
+FAIL scopes cover services: you@example.com — granted scopes do not cover drive; run `gsuite auth login you@example.com --services drive,gmail` and approve every box
+```
+
+Very old tokens predate the recording of scopes entirely; a token response is
+also not *required* to report its scopes. In both cases gsuite has no evidence
+either way and accuses nobody — the token notes that its scope list is an
+assumption (`"scopes_assumed": true`) and the check stays quiet.
+
 ## Multiple accounts
 
 ```console
@@ -216,6 +258,7 @@ FAIL at least one account — run `gsuite auth login <email>`
 | browser opens, then `access_denied` | consent declined, or the OAuth app is in *Testing* and you're not a test user | add yourself as a test user in the console |
 | `token has no refresh_token` | client re-used an old consent | `gsuite auth login` again (we always request `prompt=consent`) |
 | `HTTP 403 … accessNotConfigured` | API not enabled in your GCP project | enable it in **APIs & Services** |
+| `403` from one service only, though you authorized it | a box was unticked on the consent screen — see [Partial consent](#partial-consent) | `gsuite auth login <email> --services …`, approving every box |
 | `HTTP 401` loops | token revoked | `gsuite auth login <email>` |
 | a logged-out account still has access | logout used `--no-revoke`, or its revocation failed | `gsuite auth revoke <email>`, or remove the app at [myaccount.google.com/permissions](https://myaccount.google.com/permissions) |
 | `is a service_account key` | ADC points at a service-account JSON | `gsuite auth login`, or export `GSUITE_ACCESS_TOKEN` |

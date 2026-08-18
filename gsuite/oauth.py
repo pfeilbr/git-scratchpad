@@ -69,6 +69,18 @@ def scopes_for(services: list[str]) -> list[str]:
     return sorted(scopes)
 
 
+def granted_services(scopes: list[str]) -> list[str]:
+    """Which services `scopes` actually covers — the inverse of `scopes_for`.
+
+    A service counts as granted only when *every* scope it needs is present:
+    half of chat's two scopes buys none of `gsuite chat`. Unknown scopes (the
+    identity scopes, or anything Google adds of its own accord) are ignored.
+    """
+    have = set(scopes)
+    return sorted(name for name, needed in SERVICE_SCOPES.items()
+                  if have.issuperset(needed))
+
+
 def get_client(store: ConfigStore) -> dict:
     """OAuth client credentials: env vars win, then stored client.json."""
     env_id = os.environ.get("GSUITE_CLIENT_ID")
@@ -153,7 +165,9 @@ def refresh_access_token(client: dict, token: dict) -> dict:
     })
     new = _with_expiry(payload)
     new.setdefault("refresh_token", token["refresh_token"])
-    for key in ("scopes",):
+    # Carry the grant record forward — including the marker saying it is a
+    # guess, so a refresh never launders an assumption into a fact.
+    for key in ("scopes", "scopes_assumed"):
         if key in token and key not in new:
             new[key] = token[key]
     return new
@@ -229,10 +243,25 @@ def loopback_authorizer(client: dict, scopes: list[str]) -> tuple[str, str]:
 
 
 def login_flow(client: dict, scopes: list[str], authorizer=None) -> dict:
+    """Run the consent flow and store the scopes Google *granted*.
+
+    The consent screen lets a user approve a subset of what was requested, so
+    the request list is a wish, not a record. The token response's `scope`
+    field is the record — space-separated, and possibly a little wider than
+    asked for (Google adds `openid` to an identity grant). It is not
+    guaranteed to be there; when it is missing the requested list is the best
+    available guess, and `scopes_assumed` marks it as exactly that so nothing
+    downstream mistakes the assumption for a fact.
+    """
     authorizer = authorizer or loopback_authorizer
     code, redirect_uri = authorizer(client, scopes)
     token = exchange_code(client, code, redirect_uri)
-    token["scopes"] = scopes
+    granted = (token.get("scope") or "").split()
+    if granted:
+        token["scopes"] = sorted(set(granted))
+    else:
+        token["scopes"] = list(scopes)
+        token["scopes_assumed"] = True
     return token
 
 

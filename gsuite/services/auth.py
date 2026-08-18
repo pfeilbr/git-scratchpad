@@ -32,17 +32,39 @@ def _requested_services(spec: str | None) -> list[str]:
     return names
 
 
+def _uncovered(services: list[str], token: dict | None) -> list[str]:
+    """Of `services`, those the token's granted scopes do not actually cover.
+
+    A token from before scopes were recorded — or none at all — carries no
+    evidence either way, so it accuses nobody: empty list.
+    """
+    if not token or "scopes" not in token:
+        return []
+    granted = set(oauth.granted_services(token["scopes"]))
+    return [s for s in services if s not in granted]
+
+
 def cmd_login(args) -> int:
     store = ConfigStore()
-    services = _requested_services(args.services)
-    scopes = oauth.scopes_for(services)
+    requested = _requested_services(args.services)
+    scopes = oauth.scopes_for(requested)
     client = oauth.get_client(store)
     token = oauth.login_flow(client, scopes)
     email = args.email or oauth.fetch_email(token)
+    # The consent screen can hand back less than was asked for. Record what
+    # was granted, so `auth list` and `auth doctor` describe the real token.
+    declined = _uncovered(requested, token)
+    services = sorted(s for s in requested if s not in declined)
     store.add_account(email, services)
     store.save_token(email, token)
-    print(f"Logged in as {email} (services: {', '.join(sorted(services))})")
-    return 0
+    print(f"Logged in as {email} (services: {', '.join(services) or 'none'})")
+    if declined:
+        names = ", ".join(sorted(declined))
+        print(f"warning: consent was partial — Google did not grant: {names}")
+        print(f"  Commands for {names} will fail with HTTP 403 until you "
+              "re-authorize and approve every box:")
+        print(f"  gsuite auth login {email} --services {','.join(requested)}")
+    return 0  # the login itself succeeded; it simply covers less
 
 
 def _revoke_stored_token(store: ConfigStore, email: str) -> tuple[str, str]:
@@ -210,9 +232,17 @@ def cmd_doctor(args) -> int:
     check(bool(accounts), "at least one account",
           "run `gsuite auth login <email>`")
     for acct in accounts:
-        state = _token_state(store.load_token(acct["email"]))
+        token = store.load_token(acct["email"])
+        state = _token_state(token)
         check(state in ("valid", "expired"), f"token usable: {acct['email']}",
               f"state={state}; run `gsuite auth login {acct['email']}`")
+        # A partial consent stays invisible otherwise: the account looks
+        # authorized right up until a command comes back 403.
+        uncovered = _uncovered(acct["services"], token)
+        check(not uncovered, f"scopes cover services: {acct['email']}",
+              f"granted scopes do not cover {', '.join(uncovered)}; "
+              f"run `gsuite auth login {acct['email']} --services "
+              f"{','.join(acct['services'])}` and approve every box")
     source = oauth.credential_source(store, store.default_account())
     check(not source.startswith("none"), f"credential source: {source}",
           "run `gsuite auth login`, set GSUITE_ACCESS_TOKEN, or configure ADC")

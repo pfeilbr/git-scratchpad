@@ -414,3 +414,86 @@ def test_auth_doctor_reports_adc_credential_source(store, tmp_path, monkeypatch,
     out = run_cli("auth", "doctor", expect=1)  # token missing, ADC carries it
     assert "credential source" in out
     assert "ADC" in out
+
+
+# -- partial consent: what Google granted, not what gsuite asked for ----------
+
+OPENID = "openid"  # Google hands this back alongside the identity scope
+
+
+def add_token_route_granting(ft, granted, access="tok", refresh="ref"):
+    """Token stub whose response carries a `scope` field, as Google's does."""
+    ft.add("POST", "oauth2.googleapis.com/token",
+           {"access_token": access, "refresh_token": refresh,
+            "expires_in": 3600, "token_type": "Bearer",
+            "scope": " ".join(granted)})
+
+
+def test_login_flow_records_the_scopes_google_granted(fake_transport):
+    requested = oauth.scopes_for(["gmail", "calendar"])
+    granted = requested + [OPENID]  # a full grant, plus Google's own addition
+    add_token_route_granting(fake_transport, granted)
+    token = oauth.login_flow(CLIENT, requested, authorizer=fake_authorizer)
+    assert token["scopes"] == sorted(granted)
+    assert "scopes_assumed" not in token
+
+
+def test_login_flow_falls_back_to_requested_and_marks_it_assumed(fake_transport):
+    requested = oauth.scopes_for(["gmail", "drive"])
+    add_token_route(fake_transport)  # `scope` is not guaranteed to come back
+    token = oauth.login_flow(CLIENT, requested, authorizer=fake_authorizer)
+    assert token["scopes"] == requested
+    assert token["scopes_assumed"] is True
+
+
+def test_granted_services_needs_every_scope_of_a_service():
+    messages, spaces = oauth.SERVICE_SCOPES["chat"]
+    half = oauth.granted_services(oauth.scopes_for(["gmail"]) + [messages])
+    assert "gmail" in half
+    assert "chat" not in half  # only one of chat's two scopes is present
+    assert "chat" in oauth.granted_services([messages, spaces])
+
+
+def test_auth_login_partial_grant_warns_and_records_only_the_granted(
+        store, fake_transport, monkeypatch, run_cli):
+    monkeypatch.setattr(oauth, "loopback_authorizer", fake_authorizer)
+    add_token_route_granting(fake_transport, oauth.scopes_for(["gmail"]))
+    out = run_cli("auth", "login", "me@x.com", "--services", "gmail,drive")
+    assert "warning" in out.lower()
+    assert "drive" in out
+    assert "403" in out  # says what the declined half now means
+    assert store.list_accounts()[0]["services"] == ["gmail"]
+    assert store.load_token("me@x.com")["scopes"] == oauth.scopes_for(["gmail"])
+
+
+def test_auth_list_shows_only_the_granted_services(store, fake_transport,
+                                                   monkeypatch, run_cli):
+    monkeypatch.setattr(oauth, "loopback_authorizer", fake_authorizer)
+    add_token_route_granting(fake_transport, oauth.scopes_for(["gmail"]))
+    run_cli("auth", "login", "me@x.com", "--services", "gmail,drive")
+    out = run_cli("auth", "list")
+    assert "services:gmail" in out
+    assert "drive" not in out
+
+
+def test_auth_doctor_flags_services_beyond_the_granted_scopes(store, run_cli):
+    store.add_account("a@x.com", ["gmail", "drive"])
+    store.save_token("a@x.com", {"access_token": "t", "refresh_token": "r",
+                                 "expiry": time.time() + 999,
+                                 "scopes": oauth.scopes_for(["gmail"])})
+    out = run_cli("auth", "doctor", expect=1)
+    assert "FAIL" in out
+    assert "drive" in out
+    assert "a@x.com" in out
+
+
+def test_auth_login_full_grant_is_unchanged_end_to_end(store, fake_transport,
+                                                       monkeypatch, run_cli):
+    """Regression pin: the ordinary login must read exactly as it always did."""
+    monkeypatch.setattr(oauth, "loopback_authorizer", fake_authorizer)
+    add_token_route_granting(fake_transport,
+                             oauth.scopes_for(["gmail", "calendar"]))
+    out = run_cli("auth", "login", "me@x.com", "--services", "gmail,calendar")
+    assert out.strip() == "Logged in as me@x.com (services: calendar, gmail)"
+    assert store.list_accounts()[0]["services"] == ["calendar", "gmail"]
+    assert store.load_token("me@x.com")["access_token"] == "tok"
