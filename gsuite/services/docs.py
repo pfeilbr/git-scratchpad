@@ -1,7 +1,7 @@
 """`gsuite docs` — create, cat, append, replace."""
 from __future__ import annotations
 
-from gsuite.api import Client
+from gsuite.api import Client, quote_id
 from gsuite.cmdreg import Cmd, arg, register_service
 from gsuite.output import confirm
 
@@ -23,27 +23,29 @@ def cmd_create(args) -> int:
 
 
 def cmd_cat(args) -> int:
-    doc = Client.for_args(args).get(f"{BASE}/{args.id}")
+    doc = Client.for_args(args).get(f"{BASE}/{quote_id(args.id)}")
     print(_extract_text(doc), end="")
     return 0
 
 
 def cmd_append(args) -> int:
-    Client.for_args(args).post(f"{BASE}/{args.id}:batchUpdate", json_body={
-        "requests": [{"insertText": {"endOfSegmentLocation": {},
-                                     "text": args.text}}],
-    })
+    Client.for_args(args).post(
+        f"{BASE}/{quote_id(args.id)}:batchUpdate",
+        json_body={"requests": [{"insertText": {
+            "endOfSegmentLocation": {},
+            "text": args.text,
+        }}]})
     confirm("appended to", args.id)
     return 0
 
 
 def cmd_replace(args) -> int:
-    reply = Client.for_args(args).post(f"{BASE}/{args.id}:batchUpdate", json_body={
-        "requests": [{"replaceAllText": {
+    reply = Client.for_args(args).post(
+        f"{BASE}/{quote_id(args.id)}:batchUpdate",
+        json_body={"requests": [{"replaceAllText": {
             "containsText": {"text": args.find, "matchCase": args.match_case},
             "replaceText": getattr(args, "with"),
-        }}],
-    })
+        }}]})
     replies = reply.get("replies", [])
     changed = (replies[0].get("replaceAllText", {}).get("occurrencesChanged", 0)
                if replies else 0)

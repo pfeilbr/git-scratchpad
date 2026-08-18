@@ -70,6 +70,11 @@ dependencies** (Python ≥ 3.10 standard library only).
 - Values interpolated into Drive `q` queries are escaped (backslash first,
   then quote), so a folder id or search term containing a quote can no longer
   change the query's meaning.
+- Ids interpolated into URL paths are percent-encoded, so a `?`, `#` or space
+  can no longer end the path early. Single-segment ids (spreadsheet, document,
+  file, form, task list) escape `/` too; multi-segment resource names
+  (`spaces/AAAA`, `people/c123`) keep `/` and instead refuse `.`/`..`
+  segments, which could otherwise walk up into a different API path.
 - Header values containing a line break are refused with a named error;
   previously a trailing newline was silently encoded into a corrupt address
   and sent.

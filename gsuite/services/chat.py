@@ -4,7 +4,7 @@ from __future__ import annotations
 from gsuite.api import Client
 from gsuite.cmdreg import Cmd, arg, max_flag, register_service
 from gsuite.output import confirm
-from gsuite.services._common import emit_paged
+from gsuite.services._common import emit_paged, resource_path
 
 BASE = "https://chat.googleapis.com/v1"
 
@@ -17,7 +17,7 @@ def cmd_spaces(args) -> int:
 
 
 def cmd_messages(args) -> int:
-    emit_paged(args, f"{BASE}/{args.space}/messages",
+    emit_paged(args, f"{BASE}/{resource_path(args.space)}/messages",
                [("NAME", "name"), ("TIME", "createTime"),
                 ("SENDER", lambda m: m.get("sender", {}).get("name", "")),
                 ("TEXT", "text")],
@@ -26,8 +26,9 @@ def cmd_messages(args) -> int:
 
 
 def cmd_send(args) -> int:
-    message = Client.for_args(args).post(f"{BASE}/{args.space}/messages",
-                                         json_body={"text": args.text})
+    message = Client.for_args(args).post(
+        f"{BASE}/{resource_path(args.space)}/messages",
+        json_body={"text": args.text})
     confirm("sent", message.get("name"))
     return 0
 
@@ -41,7 +42,7 @@ def cmd_create_space(args) -> int:
 
 
 def cmd_members(args) -> int:
-    emit_paged(args, f"{BASE}/{args.space}/members",
+    emit_paged(args, f"{BASE}/{resource_path(args.space)}/members",
                [("NAME", "name"),
                 ("MEMBER", lambda m: m.get("member", {}).get("name", "")),
                 ("TYPE", lambda m: m.get("member", {}).get("type", "")),
@@ -53,7 +54,7 @@ def cmd_members(args) -> int:
 def cmd_add_member(args) -> int:
     user = args.user if args.user.startswith("users/") else f"users/{args.user}"
     Client.for_args(args).post(
-        f"{BASE}/{args.space}/members",
+        f"{BASE}/{resource_path(args.space)}/members",
         json_body={"member": {"name": user, "type": "HUMAN"}})
     confirm("added", user, "to", args.space)
     return 0
@@ -61,7 +62,7 @@ def cmd_add_member(args) -> int:
 
 def cmd_reply(args) -> int:
     message = Client.for_args(args).post(
-        f"{BASE}/{args.space}/messages",
+        f"{BASE}/{resource_path(args.space)}/messages",
         params={"messageReplyOption": "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"},
         json_body={"text": args.text, "thread": {"name": args.thread}})
     confirm("sent", message.get("name"))

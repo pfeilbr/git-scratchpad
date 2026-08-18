@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import secrets
 
-from gsuite.api import Client
+from gsuite.api import Client, quote_id
 from gsuite.cmdreg import Cmd, arg, register_service
 from gsuite.output import confirm, emit_obj
 
@@ -27,7 +27,7 @@ def cmd_create(args) -> int:
 
 
 def cmd_info(args) -> int:
-    pres = Client.for_args(args).get(f"{BASE}/{args.id}")
+    pres = Client.for_args(args).get(f"{BASE}/{quote_id(args.id)}")
     emit_obj(args, {
         "id": pres.get("presentationId"),
         "title": pres.get("title"),
@@ -37,7 +37,7 @@ def cmd_info(args) -> int:
 
 
 def cmd_cat(args) -> int:
-    pres = Client.for_args(args).get(f"{BASE}/{args.id}")
+    pres = Client.for_args(args).get(f"{BASE}/{quote_id(args.id)}")
     if getattr(args, "json", False):
         emit_obj(args, pres)  # raw presentation JSON
         return 0
@@ -64,7 +64,7 @@ def cmd_add(args) -> int:
     ]
     if args.body:
         requests.append({"insertText": {"objectId": body_id, "text": args.body}})
-    Client.for_args(args).post(f"{BASE}/{args.id}:batchUpdate",
+    Client.for_args(args).post(f"{BASE}/{quote_id(args.id)}:batchUpdate",
                                json_body={"requests": requests})
     confirm("added slide to", args.id)
     return 0

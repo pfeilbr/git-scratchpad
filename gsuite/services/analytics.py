@@ -4,6 +4,7 @@ from __future__ import annotations
 from gsuite.api import Client
 from gsuite.cmdreg import Cmd, arg, max_flag, register_service
 from gsuite.output import emit
+from gsuite.services._common import resource_path
 
 DATA = "https://analyticsdata.googleapis.com/v1beta"
 ADMIN = "https://analyticsadmin.googleapis.com/v1beta"
@@ -14,8 +15,9 @@ def _csv(value: str | None) -> list[str]:
 
 
 def _property(value: str) -> str:
-    """Accept `properties/123` or a bare `123`."""
-    return value if value.startswith("properties/") else f"properties/{value}"
+    """Accept `properties/123` or a bare `123`; return the raw name."""
+    return (value if value.startswith("properties/")
+            else f"properties/{value}")
 
 
 def _report_body(args, *, dates: bool) -> dict:
@@ -56,7 +58,7 @@ def cmd_properties(args) -> int:
 
 def cmd_report(args) -> int:
     report = Client.for_args(args).post(
-        f"{DATA}/{_property(args.property)}:runReport",
+        f"{DATA}/{resource_path(_property(args.property))}:runReport",
         json_body=_report_body(args, dates=True))
     _emit_report(args, report)
     return 0
@@ -64,7 +66,7 @@ def cmd_report(args) -> int:
 
 def cmd_realtime(args) -> int:
     report = Client.for_args(args).post(
-        f"{DATA}/{_property(args.property)}:runRealtimeReport",
+        f"{DATA}/{resource_path(_property(args.property))}:runRealtimeReport",
         json_body=_report_body(args, dates=False))
     _emit_report(args, report)
     return 0

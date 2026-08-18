@@ -4,12 +4,13 @@ from __future__ import annotations
 from gsuite.api import Client
 from gsuite.cmdreg import Cmd, arg, max_flag, register_service
 from gsuite.output import confirm, emit_obj
-from gsuite.services._common import emit_paged
+from gsuite.services._common import emit_paged, resource_path
 
 BASE = "https://meet.googleapis.com/v2"
 
 
 def _space_name(space: str) -> str:
+    """`spaces/x` or a bare `x` -> the raw resource name (not URL-escaped)."""
     return space if space.startswith("spaces/") else f"spaces/{space}"
 
 
@@ -34,7 +35,8 @@ def cmd_create(args) -> int:
 
 
 def cmd_get(args) -> int:
-    space = Client.for_args(args).get(f"{BASE}/{_space_name(args.space)}")
+    space = Client.for_args(args).get(
+        f"{BASE}/{resource_path(_space_name(args.space))}")
     emit_obj(args, {
         "name": space.get("name"),
         "code": space.get("meetingCode"),
@@ -47,7 +49,8 @@ def cmd_get(args) -> int:
 
 def cmd_end(args) -> int:
     name = _space_name(args.space)
-    Client.for_args(args).post(f"{BASE}/{name}:endActiveConference")
+    Client.for_args(args).post(
+        f"{BASE}/{resource_path(name)}:endActiveConference")
     confirm("ended active conference in", name)
     return 0
 
@@ -61,7 +64,8 @@ def cmd_conferences(args) -> int:
 
 
 def cmd_participants(args) -> int:
-    emit_paged(args, f"{BASE}/{_record_name(args.record)}/participants",
+    record = resource_path(_record_name(args.record))
+    emit_paged(args, f"{BASE}/{record}/participants",
                [("NAME", "name"), ("USER", _participant_user),
                 ("JOINED", "earliestStartTime")],
                key="participants", limit=args.max)

@@ -5,13 +5,17 @@ from gsuite.api import Client
 from gsuite.cmdreg import Cmd, arg, max_flag, register_service
 from gsuite.errors import CLIError
 from gsuite.output import confirm, emit_obj
-from gsuite.services._common import emit_paged
+from gsuite.services._common import emit_paged, resource_path
 
 BASE = "https://keep.googleapis.com/v1"
 
 
 def _note_name(note_id: str) -> str:
-    """Accept `notes/x` or a bare `x`; return the full resource name."""
+    """Accept `notes/x` or a bare `x`; return the full resource name.
+
+    The raw name, not a URL path: it also travels in request bodies, where
+    percent-encoding would be wrong. Callers wrap it in `resource_path`.
+    """
     return note_id if note_id.startswith("notes/") else f"notes/{note_id}"
 
 
@@ -23,7 +27,7 @@ def cmd_list(args) -> int:
 
 def cmd_get(args) -> int:
     name = _note_name(args.id)
-    note = Client.for_args(args).get(f"{BASE}/{name}")
+    note = Client.for_args(args).get(f"{BASE}/{resource_path(name)}")
     emit_obj(args, {
         "name": note.get("name"),
         "title": note.get("title", ""),
@@ -43,19 +47,19 @@ def cmd_create(args) -> int:
 
 def cmd_rm(args) -> int:
     name = _note_name(args.id)
-    Client.for_args(args).delete(f"{BASE}/{name}")
+    Client.for_args(args).delete(f"{BASE}/{resource_path(name)}")
     confirm("deleted", name)
     return 0
 
 
 def cmd_share(args) -> int:
     name = _note_name(args.id)
-    Client.for_args(args).post(f"{BASE}/{name}/permissions:batchCreate",
-                               json_body={"requests": [{
-                                   "parent": name,
-                                   "permission": {"role": "WRITER",
-                                                  "email": args.email},
-                               }]})
+    Client.for_args(args).post(
+        f"{BASE}/{resource_path(name)}/permissions:batchCreate",
+        json_body={"requests": [{
+            "parent": name,
+            "permission": {"role": "WRITER", "email": args.email},
+        }]})
     confirm("shared", name, "with", args.email)
     return 0
 
@@ -63,12 +67,12 @@ def cmd_share(args) -> int:
 def cmd_unshare(args) -> int:
     name = _note_name(args.id)
     client = Client.for_args(args)
-    note = client.get(f"{BASE}/{name}")
+    note = client.get(f"{BASE}/{resource_path(name)}")
     perm = next((p for p in note.get("permissions", [])
                  if p.get("email") == args.email), None)
     if perm is None:
         raise CLIError(f"no permission for {args.email} on {name}")
-    client.post(f"{BASE}/{name}/permissions:batchDelete",
+    client.post(f"{BASE}/{resource_path(name)}/permissions:batchDelete",
                 json_body={"names": [perm["name"]]})
     confirm("unshared", args.email, "from", name)
     return 0
