@@ -20,7 +20,7 @@ flowchart TD
 
     CLI --> SVC
     REG["cmdreg.py<br/>Cmd / Group / arg tables"] -. "builds argparse tree" .-> CLI
-    SVC --> COMMON["services/_common.py<br/>emit_paged()"]
+    SVC --> COMMON["services/_common.py<br/>emit_paged(), resource_path()"]
     SVC --> OUT["output.py<br/>emit / emit_obj / confirm<br/>tables or --json"]
     COMMON --> CLIENT
     SVC --> CLIENT["api.py — Client<br/>params · JSON · pagination<br/>401 retry · backoff · --readonly"]
@@ -116,7 +116,7 @@ sequenceDiagram
 | `gsuite/api.py` | `Client`: auth header, JSON, pagination, 401 retry, 429/5xx backoff, `--readonly` guard |
 | `gsuite/transport.py` | `request()` — the only code that opens a socket |
 | `gsuite/output.py` | `emit` (tables/JSON), `emit_obj`, `confirm` |
-| `gsuite/services/_common.py` | `emit_paged()` — the list-command idiom |
+| `gsuite/services/_common.py` | `emit_paged()` — the list-command idiom; `resource_path()` — escape a slash-bearing resource name for a URL path |
 | `gsuite/services/<name>.py` | one per service: handlers + command table |
 | `gsuite/services/completion.py` | shell completion emitted from the parser tree |
 | `gsuite/errors.py` | `CLIError` → exit 1; `AuthError`, `APIError` subclasses |

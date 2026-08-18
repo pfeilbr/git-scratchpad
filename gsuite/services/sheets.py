@@ -15,7 +15,8 @@ VALUES_FLAG = arg("--values", required=True,
 
 
 def _values_url(sheet_id: str, cell_range: str, suffix: str = "") -> str:
-    return f"{BASE}/{sheet_id}/values/{quote_id(cell_range)}{suffix}"
+    return (f"{BASE}/{quote_id(sheet_id)}"
+            f"/values/{quote_id(cell_range)}{suffix}")
 
 
 def parse_values(spec: str) -> list[list[str]]:
@@ -70,7 +71,7 @@ TABS_FIELDS = ("sheets(properties(sheetId,title,index,"
 
 
 def cmd_tabs(args) -> int:
-    data = Client.for_args(args).get(f"{BASE}/{args.id}",
+    data = Client.for_args(args).get(f"{BASE}/{quote_id(args.id)}",
                                      params={"fields": TABS_FIELDS})
     tabs = [sheet.get("properties", {}) for sheet in data.get("sheets", [])]
     emit(args, tabs, [
@@ -83,7 +84,7 @@ def cmd_tabs(args) -> int:
 
 def cmd_add_tab(args) -> int:
     result = Client.for_args(args).post(
-        f"{BASE}/{args.id}:batchUpdate",
+        f"{BASE}/{quote_id(args.id)}:batchUpdate",
         json_body={"requests": [
             {"addSheet": {"properties": {"title": args.title}}}]})
     props = (result.get("replies", [{}])[0]
@@ -94,7 +95,7 @@ def cmd_add_tab(args) -> int:
 
 def cmd_rm_tab(args) -> int:
     Client.for_args(args).post(
-        f"{BASE}/{args.id}:batchUpdate",
+        f"{BASE}/{quote_id(args.id)}:batchUpdate",
         json_body={"requests": [{"deleteSheet": {"sheetId": int(args.tab)}}]})
     confirm("removed tab", args.tab)
     return 0

@@ -6,7 +6,7 @@ import mimetypes
 import os
 import sys
 
-from gsuite.api import Client
+from gsuite.api import Client, quote_id
 from gsuite.cmdreg import Cmd, arg, max_flag, register_service
 from gsuite.errors import CLIError
 from gsuite.output import confirm, emit, emit_obj
@@ -80,7 +80,7 @@ def cmd_audit(args) -> int:
 
 
 def cmd_info(args) -> int:
-    meta = Client.for_args(args).get(f"{BASE}/files/{args.id}",
+    meta = Client.for_args(args).get(f"{BASE}/files/{quote_id(args.id)}",
                                      params=_with_shared({"fields": INFO_FIELDS}))
     emit_obj(args, meta, [
         ("id", "id"), ("name", "name"), ("type", "mimeType"),
@@ -99,19 +99,19 @@ def cmd_mv(args) -> int:
     client = Client.for_args(args)
     params = None
     if args.parent:
-        current = client.get(f"{BASE}/files/{args.id}",
+        current = client.get(f"{BASE}/files/{quote_id(args.id)}",
                              params={"fields": "parents"}).get("parents", [])
         params = {"addParents": args.parent,
                   "removeParents": ",".join(current)}
     body = {"name": args.name} if args.name else {}
-    client.patch(f"{BASE}/files/{args.id}", params=_with_shared(params),
-                 json_body=body)
+    client.patch(f"{BASE}/files/{quote_id(args.id)}",
+                 params=_with_shared(params), json_body=body)
     confirm("moved" if args.parent else "renamed", args.id)
     return 0
 
 
 def cmd_trash(args) -> int:
-    Client.for_args(args).patch(f"{BASE}/files/{args.id}",
+    Client.for_args(args).patch(f"{BASE}/files/{quote_id(args.id)}",
                                 params=_with_shared(),
                                 json_body={"trashed": True})
     confirm("trashed", args.id)
@@ -119,7 +119,7 @@ def cmd_trash(args) -> int:
 
 
 def cmd_restore(args) -> int:
-    Client.for_args(args).patch(f"{BASE}/files/{args.id}",
+    Client.for_args(args).patch(f"{BASE}/files/{quote_id(args.id)}",
                                 params=_with_shared(),
                                 json_body={"trashed": False})
     confirm("restored", args.id)
@@ -173,7 +173,7 @@ def _write_out(data: bytes, out_path: str | None) -> None:
 
 
 def cmd_download(args) -> int:
-    data = Client.for_args(args).get(f"{BASE}/files/{args.id}",
+    data = Client.for_args(args).get(f"{BASE}/files/{quote_id(args.id)}",
                                      params=_with_shared({"alt": "media"}),
                                      raw=True)
     _write_out(data, args.output)
@@ -181,9 +181,9 @@ def cmd_download(args) -> int:
 
 
 def cmd_export(args) -> int:
-    data = Client.for_args(args).get(f"{BASE}/files/{args.id}/export",
-                                     params=_with_shared({"mimeType": args.mime}),
-                                     raw=True)
+    data = Client.for_args(args).get(
+        f"{BASE}/files/{quote_id(args.id)}/export",
+        params=_with_shared({"mimeType": args.mime}), raw=True)
     _write_out(data, args.output)
     return 0
 
@@ -194,7 +194,7 @@ def cmd_share(args) -> int:
             "role": args.role}
     if grantee != "anyone":
         body["emailAddress"] = grantee
-    Client.for_args(args).post(f"{BASE}/files/{args.id}/permissions",
+    Client.for_args(args).post(f"{BASE}/files/{quote_id(args.id)}/permissions",
                                params=_with_shared(), json_body=body)
     confirm("shared", args.id, "with", grantee, "as", args.role)
     return 0
@@ -202,7 +202,7 @@ def cmd_share(args) -> int:
 
 def cmd_permissions(args) -> int:
     perms = Client.for_args(args).get(
-        f"{BASE}/files/{args.id}/permissions",
+        f"{BASE}/files/{quote_id(args.id)}/permissions",
         params=_with_shared(
             {"fields": "permissions(id,type,role,emailAddress)"}))
     emit(args, perms.get("permissions", []),
@@ -212,7 +212,7 @@ def cmd_permissions(args) -> int:
 
 
 def cmd_rm(args) -> int:
-    Client.for_args(args).delete(f"{BASE}/files/{args.id}",
+    Client.for_args(args).delete(f"{BASE}/files/{quote_id(args.id)}",
                                  params=_with_shared())
     confirm("deleted", args.id)
     return 0
@@ -220,8 +220,9 @@ def cmd_rm(args) -> int:
 
 def cmd_copy(args) -> int:
     body = {"name": args.name} if args.name else {}
-    copied = Client.for_args(args).post(f"{BASE}/files/{args.id}/copy",
-                                        params=_with_shared(), json_body=body)
+    copied = Client.for_args(args).post(
+        f"{BASE}/files/{quote_id(args.id)}/copy",
+        params=_with_shared(), json_body=body)
     confirm("copied to", copied.get("id"), copied.get("name"))
     return 0
 

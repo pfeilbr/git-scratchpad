@@ -5,7 +5,7 @@ from gsuite.api import Client
 from gsuite.cmdreg import Cmd, Group, arg, max_flag, register_service
 from gsuite.errors import CLIError
 from gsuite.output import confirm, emit, emit_obj
-from gsuite.services._common import emit_paged
+from gsuite.services._common import emit_paged, resource_path
 
 BASE = "https://people.googleapis.com/v1"
 PERSON_FIELDS = "names,emailAddresses,phoneNumbers"
@@ -51,14 +51,15 @@ def cmd_create(args) -> int:
 
 
 def cmd_rm(args) -> int:
-    Client.for_args(args).delete(f"{BASE}/{args.resource}:deleteContact")
+    Client.for_args(args).delete(
+        f"{BASE}/{resource_path(args.resource)}:deleteContact")
     confirm("deleted", args.resource)
     return 0
 
 
 def cmd_get(args) -> int:
     person = Client.for_args(args).get(
-        f"{BASE}/{args.resource}",
+        f"{BASE}/{resource_path(args.resource)}",
         params={"personFields": f"{PERSON_FIELDS},organizations"})
     emit_obj(args, person, [
         ("resource", "resourceName"),
@@ -83,9 +84,10 @@ def cmd_update(args) -> int:
         raise CLIError("nothing to update (pass --name, --email and/or --phone)")
     fields = ",".join(updates)
     client = Client.for_args(args)
-    etag = client.get(f"{BASE}/{args.resource}",
+    resource = resource_path(args.resource)
+    etag = client.get(f"{BASE}/{resource}",
                       params={"personFields": fields}).get("etag")
-    client.patch(f"{BASE}/{args.resource}:updateContact",
+    client.patch(f"{BASE}/{resource}:updateContact",
                  params={"updatePersonFields": fields},
                  json_body={"etag": etag, **updates})
     confirm("updated", args.resource)
@@ -107,7 +109,7 @@ def cmd_groups_create(args) -> int:
 
 def cmd_groups_add(args) -> int:
     Client.for_args(args).post(
-        f"{BASE}/{args.group}/members:modify",
+        f"{BASE}/{resource_path(args.group)}/members:modify",
         json_body={"resourceNamesToAdd": [args.person]})
     confirm("added", args.person, "to", args.group)
     return 0

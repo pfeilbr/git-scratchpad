@@ -1,7 +1,7 @@
 """`gsuite forms` — create, get, questions, responses."""
 from __future__ import annotations
 
-from gsuite.api import Client
+from gsuite.api import Client, quote_id
 from gsuite.cmdreg import Cmd, arg, max_flag, register_service
 from gsuite.output import confirm, emit, emit_obj
 from gsuite.services._common import emit_paged
@@ -23,7 +23,7 @@ def cmd_create(args) -> int:
 
 
 def cmd_get(args) -> int:
-    form = Client.for_args(args).get(f"{BASE}/forms/{args.id}")
+    form = Client.for_args(args).get(f"{BASE}/forms/{quote_id(args.id)}")
     emit_obj(args, {
         "id": form.get("formId"),
         "title": form.get("info", {}).get("title"),
@@ -35,14 +35,14 @@ def cmd_get(args) -> int:
 
 
 def cmd_questions(args) -> int:
-    form = Client.for_args(args).get(f"{BASE}/forms/{args.id}")
+    form = Client.for_args(args).get(f"{BASE}/forms/{quote_id(args.id)}")
     emit(args, form.get("items", []),
          [("ID", "itemId"), ("TITLE", "title"), ("TYPE", _question_type)])
     return 0
 
 
 def cmd_responses(args) -> int:
-    emit_paged(args, f"{BASE}/forms/{args.id}/responses",
+    emit_paged(args, f"{BASE}/forms/{quote_id(args.id)}/responses",
                [("ID", "responseId"), ("SUBMITTED", "lastSubmittedTime")],
                key="responses", limit=args.max)
     return 0
