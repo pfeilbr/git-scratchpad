@@ -4,6 +4,7 @@ Layout, under the config dir ($GSUITE_CONFIG_DIR, else %APPDATA%\\gsuite on
 Windows, else $XDG_CONFIG_HOME/gsuite, else ~/.config/gsuite — see
 `default_config_dir()`):
   accounts.json          accounts, aliases, default account
+  accounts.json.lock     the lock serializing edits to accounts.json (empty)
   client.json            OAuth client credentials (Desktop app type)
   tokens/<email>.json    per-account token set
 
@@ -12,19 +13,51 @@ Everything here holds credentials, so every write goes through
 before a byte of payload reaches them, and the destination is published with a
 rename so an interrupted run can never leave a half-written store behind.
 Text is UTF-8 everywhere, independent of the platform's locale.
+
+accounts.json is the one file two gsuite runs edit at the same time — two
+`gsuite auth login`s, a shell loop setting aliases — and an atomic write alone
+does not make that safe: both runs read the same store and the second write
+drops the first run's account. So every read-modify-write of it runs inside
+`ConfigStore._locked()` (see there for the platform details); reads take no
+lock at all, since the atomic replace already hands a reader one whole version
+or the other.
 """
 from __future__ import annotations
 
+import contextlib
+import errno
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 
 from gsuite.errors import CLIError
 
+try:  # POSIX
+    import fcntl
+except ImportError:  # pragma: no cover - Windows has msvcrt instead
+    fcntl = None
+try:  # Windows
+    import msvcrt
+except ImportError:  # pragma: no cover - POSIX has fcntl instead
+    msvcrt = None
+
 DIR_MODE = 0o700   # config dirs: owner-only, so `ls` cannot enumerate accounts
 FILE_MODE = 0o600  # tokens, client secret, accounts: owner-only
 ENCODING = "utf-8"  # JSON is UTF-8 by spec; never the platform default
+LOCK_NAME = "accounts.json.lock"
+LOCK_TIMEOUT = 5.0  # seconds; the guarded section is a read, an edit and a write
+LOCK_POLL = 0.01    # how often to retry while waiting for the holder to finish
+
+# Every errno the two lock APIs use for "somebody else holds it". Anything else
+# means the lock itself is broken (no locking on this filesystem, say), which is
+# a different error with different advice — never something to keep polling.
+_BUSY = frozenset(
+    code for code in (getattr(errno, name, None) for name in
+                      ("EACCES", "EAGAIN", "EWOULDBLOCK", "EDEADLOCK", "EDEADLK"))
+    if code is not None
+)
 
 
 def _windows() -> bool:
@@ -120,6 +153,54 @@ def _write_atomic(path: Path, text: str, mode: int = FILE_MODE) -> None:
     os.chmod(path, mode)
 
 
+def _try_lock(fd: int) -> bool:
+    """Take the exclusive lock on `fd`; False if another run already holds it.
+
+    Never blocks — the caller polls — so the wait can be bounded and a wedged
+    holder cannot wedge everyone else forever (see `ConfigStore._locked`).
+
+    The two platforms are not equally well covered, and this is the honest
+    version of the difference:
+
+    * POSIX uses `fcntl.flock`. The lock belongs to the open file description,
+      so it serializes threads in one process as well as separate processes,
+      and the kernel drops it when the holder's last handle closes — including
+      when the process is killed. It is only as good as the filesystem: an
+      NFSv3 mount with no lock daemon may not enforce it at all, in which case
+      concurrent logins can still lose an update.
+    * Windows uses `msvcrt.locking` on a single byte, which is a mandatory
+      byte-range lock released when the handle closes, so it excludes other
+      processes the same way. It is the same shape of guarantee, but this
+      branch is not exercised by the test suite (which runs on POSIX), so
+      treat Windows as untested rather than proven.
+    """
+    if _windows():
+        os.lseek(fd, 0, os.SEEK_SET)  # msvcrt locks a range at the cursor
+        try:
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        except OSError as exc:
+            if exc.errno in _BUSY:
+                return False
+            raise
+        return True
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as exc:
+        if exc.errno in _BUSY:
+            return False
+        raise
+    return True
+
+
+def _unlock(fd: int) -> None:
+    """Drop the lock on `fd`. Closing the handle would do it too; this is tidier."""
+    if _windows():
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        return
+    fcntl.flock(fd, fcntl.LOCK_UN)
+
+
 def _dumps(payload: dict) -> str:
     return json.dumps(payload, indent=2, sort_keys=True)
 
@@ -132,6 +213,72 @@ class ConfigStore:
 
     def _accounts_path(self) -> Path:
         return self.root / "accounts.json"
+
+    def _lock_path(self) -> Path:
+        return self.root / LOCK_NAME
+
+    @contextlib.contextmanager
+    def _locked(self):
+        """Hold the account store's exclusive lock for the block.
+
+        Every read-modify-write of accounts.json runs in here — the read, the
+        edit and the write are one indivisible step — so two gsuite runs
+        compose instead of clobbering: the loser waits, then reads back what
+        the winner published and adds its own change on top. Serializing in
+        this one place is the whole of the mechanism; the mutators below just
+        wrap themselves in it.
+
+        The lock is a file of its own beside the store rather than
+        accounts.json itself, because `_write_atomic()` *replaces* that file:
+        a lock taken on it would end up held on an unlinked inode that no
+        later run can even name, excluding nobody. The lock file is never
+        deleted, for exactly the same reason — unlinking it after use would
+        let the next run create a fresh inode and walk straight into the
+        critical section beside a waiter still holding the old one. It stays
+        put, empty, 0600, and costs one inode.
+
+        Readers deliberately do not come through here: `gsuite auth list` must
+        never hang behind someone else's login, and the atomic replace already
+        gives a reader one whole version of the file or the other.
+
+        The wait is bounded by `LOCK_TIMEOUT`. A holder that dies drops the
+        lock with its handle, but one that merely hangs does not, and the CLI
+        has to fail with something the user can act on rather than block
+        forever.
+        """
+        path = self._lock_path()
+        _ensure_private_dir(self.root)
+        # Created 0600 like everything else here; the umask can only take bits
+        # away, so it never leaks, and the chmod makes an exotic one (or a lock
+        # file left loose by an older gsuite) deterministic either way.
+        fd = os.open(path, os.O_RDWR | os.O_CREAT, FILE_MODE)
+        try:
+            os.chmod(path, FILE_MODE)
+            deadline = time.monotonic() + LOCK_TIMEOUT
+            while True:
+                try:
+                    if _try_lock(fd):
+                        break
+                except OSError as exc:  # not contention: locking is unavailable
+                    raise CLIError(
+                        f"cannot lock {path} ({exc}) — the config directory may "
+                        "be on a filesystem without file locking; point "
+                        "$GSUITE_CONFIG_DIR at a local one"
+                    ) from exc
+                if time.monotonic() >= deadline:
+                    raise CLIError(
+                        f"timed out after {LOCK_TIMEOUT:g}s waiting for "
+                        f"{path} — another gsuite run is still writing the "
+                        "account store. If none is running, remove that lock "
+                        "file and try again"
+                    )
+                time.sleep(LOCK_POLL)
+            try:
+                yield
+            finally:
+                _unlock(fd)
+        finally:
+            os.close(fd)
 
     def token_path(self, email: str) -> Path:
         return self.root / "tokens" / f"{email}.json"
@@ -164,19 +311,24 @@ class ConfigStore:
     # -- accounts ----------------------------------------------------------
 
     def add_account(self, email: str, services: list[str] | None = None) -> None:
-        data = self._read()
-        data["accounts"][email] = {"services": sorted(set(services or []))}
-        if data["default"] is None:
-            data["default"] = email
-        self._write(data)
+        with self._locked():
+            data = self._read()
+            data["accounts"][email] = {"services": sorted(set(services or []))}
+            if data["default"] is None:
+                data["default"] = email
+            self._write(data)
 
     def remove_account(self, email: str) -> None:
-        data = self._read()
-        data["accounts"].pop(email, None)
-        data["aliases"] = {a: e for a, e in data["aliases"].items() if e != email}
-        if data["default"] == email:
-            data["default"] = next(iter(sorted(data["accounts"])), None)
-        self._write(data)
+        with self._locked():
+            data = self._read()
+            data["accounts"].pop(email, None)
+            data["aliases"] = {a: e for a, e in data["aliases"].items()
+                               if e != email}
+            if data["default"] == email:
+                data["default"] = next(iter(sorted(data["accounts"])), None)
+            self._write(data)
+        # Outside the lock: a token file is this account's alone, so dropping
+        # it races with nobody, and the lock stays as narrow as the store.
         try:
             self.token_path(email).unlink()
         except FileNotFoundError:
@@ -193,23 +345,28 @@ class ConfigStore:
         return self._read()["default"]
 
     def set_default(self, email: str) -> None:
-        data = self._read()
-        if email not in data["accounts"]:
-            raise CLIError(f"unknown account: {email} (add it with `gsuite auth login`)")
-        data["default"] = email
-        self._write(data)
+        with self._locked():
+            data = self._read()
+            if email not in data["accounts"]:
+                raise CLIError(
+                    f"unknown account: {email} (add it with `gsuite auth login`)")
+            data["default"] = email
+            self._write(data)
 
     def set_alias(self, alias: str, email: str) -> None:
-        data = self._read()
-        if email not in data["accounts"]:
-            raise CLIError(f"unknown account: {email} (add it with `gsuite auth login`)")
-        data["aliases"][alias] = email
-        self._write(data)
+        with self._locked():
+            data = self._read()
+            if email not in data["accounts"]:
+                raise CLIError(
+                    f"unknown account: {email} (add it with `gsuite auth login`)")
+            data["aliases"][alias] = email
+            self._write(data)
 
     def remove_alias(self, alias: str) -> None:
-        data = self._read()
-        data["aliases"].pop(alias, None)
-        self._write(data)
+        with self._locked():
+            data = self._read()
+            data["aliases"].pop(alias, None)
+            self._write(data)
 
     def resolve(self, name: str | None) -> str:
         """Resolve an alias/email/None (=default) to a configured account."""
