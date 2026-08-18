@@ -94,7 +94,7 @@ def _build_mime(to: str, subject: str, body: str, cc: str | None = None,
 
 
 def _fetch_meta(client: Client, msg_id: str) -> dict:
-    return client.get(f"{BASE}/messages/{msg_id}", params={
+    return client.get(f"{BASE}/messages/{quote_id(msg_id)}", params={
         "format": "metadata",
         "metadataHeaders": ["From", "To", "Subject", "Date", "Message-ID"],
     })
@@ -119,7 +119,7 @@ def cmd_search(args) -> int:
 
 def cmd_get(args) -> int:
     client = Client.for_args(args)
-    message = client.get(f"{BASE}/messages/{args.id}", params={"format": "full"})
+    message = client.get(f"{BASE}/messages/{quote_id(args.id)}", params={"format": "full"})
     headers = _headers(message)
     emit_obj(args, {
         "id": message.get("id"),
@@ -135,7 +135,7 @@ def cmd_get(args) -> int:
 
 def cmd_thread(args) -> int:
     client = Client.for_args(args)
-    thread = client.get(f"{BASE}/threads/{args.id}", params={"format": "full"})
+    thread = client.get(f"{BASE}/threads/{quote_id(args.id)}", params={"format": "full"})
     if getattr(args, "json", False):
         print(json.dumps(thread, indent=2, sort_keys=True))
         return 0
@@ -163,7 +163,7 @@ def _attachment_parts(payload: dict):
 
 def cmd_attachments(args) -> int:
     client = Client.for_args(args)
-    message = client.get(f"{BASE}/messages/{args.id}", params={"format": "full"})
+    message = client.get(f"{BASE}/messages/{quote_id(args.id)}", params={"format": "full"})
     parts = list(_attachment_parts(message.get("payload", {})))
     if not args.output:
         emit(args, [{"filename": p.get("filename", ""),
@@ -174,7 +174,7 @@ def cmd_attachments(args) -> int:
     os.makedirs(args.output, exist_ok=True)
     for part in parts:
         att_id = part["body"]["attachmentId"]
-        att = client.get(f"{BASE}/messages/{args.id}/attachments/{att_id}")
+        att = client.get(f"{BASE}/messages/{quote_id(args.id)}/attachments/{quote_id(att_id)}")
         data = _b64u_bytes(att.get("data", ""))
         path = os.path.join(args.output, os.path.basename(part["filename"]))
         with open(path, "wb") as fh:
@@ -218,7 +218,7 @@ def cmd_reply(args) -> int:
 
 def cmd_forward(args) -> int:
     client = Client.for_args(args)
-    original = client.get(f"{BASE}/messages/{args.id}", params={"format": "full"})
+    original = client.get(f"{BASE}/messages/{quote_id(args.id)}", params={"format": "full"})
     headers = _headers(original)
     subject = headers.get("subject", "")
     if not subject.lower().startswith("fwd:"):
@@ -234,13 +234,13 @@ def cmd_forward(args) -> int:
 
 
 def cmd_trash(args) -> int:
-    Client.for_args(args).post(f"{BASE}/messages/{args.id}/trash")
+    Client.for_args(args).post(f"{BASE}/messages/{quote_id(args.id)}/trash")
     confirm("trashed", args.id)
     return 0
 
 
 def cmd_untrash(args) -> int:
-    Client.for_args(args).post(f"{BASE}/messages/{args.id}/untrash")
+    Client.for_args(args).post(f"{BASE}/messages/{quote_id(args.id)}/untrash")
     confirm("untrashed", args.id)
     return 0
 
@@ -259,7 +259,7 @@ def _system_label_cmd(verb: str, add: Sequence[str] = (),
             body["addLabelIds"] = list(add)
         if remove:
             body["removeLabelIds"] = list(remove)
-        Client.for_args(args).post(f"{BASE}/messages/{args.id}/modify",
+        Client.for_args(args).post(f"{BASE}/messages/{quote_id(args.id)}/modify",
                                    json_body=body)
         confirm(verb, args.id)
         return 0
@@ -299,7 +299,7 @@ def cmd_labels_create(args) -> int:
 def _modify_labels(args, action_key: str, verb: str, preposition: str) -> int:
     client = Client.for_args(args)
     label_id = _label_id(client, args.label)
-    client.post(f"{BASE}/messages/{args.id}/modify",
+    client.post(f"{BASE}/messages/{quote_id(args.id)}/modify",
                 json_body={action_key: [label_id]})
     confirm(verb, args.label, preposition, args.id)
     return 0
@@ -415,7 +415,7 @@ def cmd_filters_create(args) -> int:
 
 
 def cmd_filters_rm(args) -> int:
-    Client.for_args(args).delete(f"{BASE}/settings/filters/{args.id}")
+    Client.for_args(args).delete(f"{BASE}/settings/filters/{quote_id(args.id)}")
     confirm("deleted", args.id)
     return 0
 

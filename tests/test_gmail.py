@@ -585,3 +585,40 @@ def test_empty_header_values_are_still_allowed():
     from gsuite.services.gmail import _build_mime
 
     assert _build_mime("a@x.com", "", "body")  # must not raise
+
+
+# -- message ids are one URL segment, not a path ----------------------------
+
+@pytest.mark.parametrize("argv, route", [
+    (("gmail", "trash", "../../oauth2/v1/tokeninfo"), "messages/"),
+    (("gmail", "untrash", "../../oauth2/v1/tokeninfo"), "messages/"),
+    (("gmail", "archive", "../../oauth2/v1/tokeninfo"), "messages/"),
+    (("gmail", "get", "a?b#c"), "messages/"),
+    (("gmail", "thread", "a?b#c"), "threads/"),
+])
+def test_ids_cannot_escape_their_url_segment(gmail, argv, route):
+    """A message id is opaque: it must never add segments or a query string."""
+    ft, run = gmail
+    ft.add("GET", route, {"id": "m", "threadId": "t", "payload": {}})
+    ft.add("POST", route, {"id": "m"})
+    run(*argv)
+    url = ft.calls[0]["url"]
+    assert "/messages/../" not in url and "/threads/../" not in url
+    assert "?b" not in url and "#c" not in url
+    # The hostile text survives, but percent-encoded into a single segment.
+    assert "%2F" in url or "%3F" in url or "%23" in url
+
+
+def test_filter_ids_are_encoded_too(gmail):
+    ft, run = gmail
+    ft.add("DELETE", "settings/filters/", {})
+    run("gmail", "filters", "rm", "../../../v1/other")
+    assert "/filters/../" not in ft.calls[0]["url"]
+
+
+def test_ordinary_message_ids_are_unchanged(gmail):
+    """Regression pin: a normal id must produce exactly today's URL."""
+    ft, run = gmail
+    ft.add("POST", "messages/19ab3f/trash", {"id": "19ab3f"})
+    run("gmail", "trash", "19ab3f")
+    assert ft.calls[0]["url"].endswith("/users/me/messages/19ab3f/trash")
