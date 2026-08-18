@@ -13,8 +13,14 @@ from gsuite.errors import APIError, CLIError
 # Seam for tests: monkeypatch gsuite.api._sleep to observe delays without waiting.
 _sleep = time.sleep
 
-RETRY_STATUSES = {429, 500, 502, 503, 504}
+SERVER_ERROR_STATUSES = {500, 502, 503, 504}
+RETRY_STATUSES = {429, *SERVER_ERROR_STATUSES}
 MAX_RETRIES = 3
+
+# Methods that are idempotent by definition: sending one twice leaves the same
+# state behind as sending it once, so a reply lost in transit costs only a
+# second round trip. POST and PATCH are deliberately absent.
+IDEMPOTENT_METHODS = {"GET", "HEAD", "PUT", "DELETE"}
 
 # Which `gsuite auth login --services <name>` covers a given API host, so a
 # scope error can name the one service to re-authorize. Keys are a host, or a
@@ -112,13 +118,13 @@ class Client:
                 )
                 status, resp_headers, body = transport_mod.request(
                     method, url, headers=hdrs, data=data)
-            if status not in RETRY_STATUSES or retry == MAX_RETRIES:
+            if not _should_retry(method, status) or retry == MAX_RETRIES:
                 break
             _sleep(_retry_delay(retry, resp_headers))
         if status >= 400:
             raise APIError(status,
                            _error_message(body) + _hint(status, body, url,
-                                                        self.email))
+                                                        self.email, method))
         if raw:
             return body
         return json.loads(body) if body else {}
@@ -158,6 +164,33 @@ class Client:
             params["pageToken"] = token
 
 
+def _should_retry(method: str, status: int) -> bool:
+    """Whether a failed request may be sent again.
+
+    Splitting 429 from 5xx is deliberate — please do not "simplify" it back
+    into one status set. The two say opposite things about what the server
+    already did:
+
+    * 429 is a *rejection*. Google refused the request before running any of
+      it, so nothing happened and replaying it cannot duplicate anything.
+      Retrying with backoff is safe for every method, and is exactly what
+      Google's own rate-limit guidance asks clients to do.
+    * 5xx is *unknown*. The request may well have been applied and only the
+      response lost on the way back. Replaying a non-idempotent method then
+      sends the same mail a second time, creates a duplicate calendar event,
+      or adds a group member twice — silent damage the user never asked for.
+      So a 5xx is retried only for methods that are idempotent by definition.
+
+    A 401 is neither: it is handled separately in `Client.request`, which
+    refreshes the token and retries once for every method, because rejected
+    credentials mean the request never reached the handler at all.
+    """
+    if status == 429:
+        return True
+    return (status in SERVER_ERROR_STATUSES
+            and method.upper() in IDEMPOTENT_METHODS)
+
+
 def _retry_delay(retry: int, headers: dict) -> int:
     """Seconds to wait before retry N (0-based): Retry-After wins, else 1/2/4."""
     for name, value in (headers or {}).items():
@@ -192,7 +225,8 @@ def _login_command(email: str, service: str = "") -> str:
     return " ".join(parts)
 
 
-def _hint(status: int, body: bytes, url: str, email: str) -> str:
+def _hint(status: int, body: bytes, url: str, email: str,
+          method: str = "GET") -> str:
     """The next step for errors a user can fix, appended to Google's own text.
 
     Google says what went wrong but never what to do about it: which of the
@@ -200,6 +234,13 @@ def _hint(status: int, body: bytes, url: str, email: str) -> str:
     than "wrong scopes". Statuses with no useful advice get nothing.
     """
     text = (body or b"").decode(errors="replace").lower()
+    if status in SERVER_ERROR_STATUSES and not _should_retry(method, status):
+        # The one case where the client's *inaction* needs explaining: the
+        # user must decide whether to re-run it, and only they know whether a
+        # duplicate would matter.
+        return (f" — the request was not retried because replaying a "
+                f"{method.upper()} could duplicate the operation; it may or "
+                "may not have been applied, so check before sending it again")
     if status == 401:
         return (" — those credentials were rejected; run "
                 f"`{_login_command(email)}` to sign in again")

@@ -101,6 +101,28 @@ error: timed out after 5s talking to www.googleapis.com (raise the limit with --
 Invalid values (non-numeric, zero or negative) are rejected before anything
 is sent, with the same exit 1.
 
+## Retries: writes are never replayed on a server error
+
+A `429` (rate limited) is retried up to three times with backoff — for every
+command — because Google rejects such a request before running any of it, so
+resending it cannot do anything twice.
+
+A `5xx` (500, 502, 503, 504) is treated differently, because it does not say
+whether the work happened: the request may have been applied and only the
+reply lost on the way back. Reads and idempotent writes (`GET`, `PUT`,
+`DELETE`) are still retried, but a `POST` or `PATCH` — sending mail, creating
+an event, adding a group member — fails immediately with exit 1 rather than
+risk a duplicate, and says so:
+
+```console
+$ gsuite gmail send --to you@x.com --subject hi --body hi
+error: HTTP 503: Backend Error — the request was not retried because replaying a POST could duplicate the operation; it may or may not have been applied, so check before sending it again
+```
+
+So a script must not blindly re-run a failed write: check whether it took
+effect first (the message may already be in `SENT`, the event already on the
+calendar). Retry loops around `gsuite` are safe for reads, not for writes.
+
 ## Read-only runs
 
 `--readonly` (before the service name) refuses anything that could modify

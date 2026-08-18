@@ -153,6 +153,92 @@ def test_401_refresh_flow_does_not_sleep(client, sleeps):
     assert sleeps == []
 
 
+# -- idempotency: a 5xx must never replay a write ----------------------------
+
+# Idempotent by definition — repeating one has the same effect as sending it
+# once, so a lost reply costs nothing but a second round trip.
+IDEMPOTENT = ["GET", "PUT", "DELETE"]
+# Not idempotent — each delivery is another sent mail, another created event,
+# another group member.
+NON_IDEMPOTENT = ["POST", "PATCH"]
+
+
+@pytest.mark.parametrize("status", [500, 502, 503, 504])
+@pytest.mark.parametrize("method", NON_IDEMPOTENT)
+def test_5xx_never_replays_a_non_idempotent_request(client, sleeps, method,
+                                                    status):
+    """A 5xx often means the request WAS applied and only the reply was lost,
+    so resending it could send the same mail or create the same event twice.
+    One attempt, then fail."""
+    c, ft = client
+    for _ in range(4):  # four replies queued: the client must want only one
+        ft.add(method, "/v1/x", {"error": {"message": "backend error"}},
+               status=status)
+    with pytest.raises(APIError, match="backend error") as exc:
+        c.request(method, "https://example.googleapis.com/v1/x",
+                  json_body={"n": 1})
+    assert exc.value.status == status
+    assert len(ft.calls) == 1
+    assert sleeps == []
+
+
+@pytest.mark.parametrize("method", IDEMPOTENT)
+def test_5xx_still_retries_an_idempotent_request(client, sleeps, method):
+    """Regression pin: replaying these cannot duplicate anything, so they keep
+    the full backoff budget."""
+    c, ft = client
+    for _ in range(4):
+        ft.add(method, "/v1/x", {"error": {"message": "backend error"}},
+               status=503)
+    with pytest.raises(APIError, match="backend error"):
+        c.request(method, "https://example.googleapis.com/v1/x")
+    assert len(ft.calls) == 4
+    assert sleeps == [1, 2, 4]
+
+
+@pytest.mark.parametrize("method", NON_IDEMPOTENT + IDEMPOTENT)
+def test_429_still_retries_every_method(client, sleeps, method):
+    """Regression pin: a 429 is a rejection — nothing ran — so replaying it is
+    safe for writes too, and backing off is what Google's guidance asks for."""
+    c, ft = client
+    ft.add(method, "/v1/x", {"error": {"message": "rate limited"}}, status=429)
+    ft.add(method, "/v1/x", {"ok": True})
+    assert c.request(method,
+                     "https://example.googleapis.com/v1/x") == {"ok": True}
+    assert len(ft.calls) == 2
+    assert sleeps == [1]
+
+
+def test_401_refresh_still_retries_a_post_once(client, sleeps):
+    """Regression pin: a 401 is rejected for authentication before the handler
+    ever runs, so refresh-and-retry-once stays intact for writes."""
+    c, ft = client
+    ft.add("POST", "/v1/x", {"error": {"message": "unauthorized"}}, status=401)
+    ft.add("POST", "oauth2.googleapis.com/token",
+           {"access_token": "tok2", "expires_in": 3600})
+    ft.add("POST", "/v1/x", {"ok": True})
+    assert c.post("https://example.googleapis.com/v1/x",
+                  json_body={"n": 1}) == {"ok": True}
+    assert ft.calls[-1]["headers"]["Authorization"] == "Bearer tok2"
+    assert sleeps == []
+
+
+def test_5xx_on_a_write_explains_why_it_was_not_retried(client, sleeps):
+    """The user has to decide whether to re-run it by hand, so the error says
+    it was not replayed and may or may not have taken effect."""
+    c, ft = client
+    ft.add("POST", "/messages/send", {"error": {"message": "Backend Error"}},
+           status=503)
+    with pytest.raises(APIError) as exc:
+        c.post("https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+               json_body={"raw": "..."})
+    msg = str(exc.value)
+    assert "Backend Error" in msg  # Google's own text still leads
+    assert "not retried" in msg
+    assert "duplicate" in msg
+    assert "may or may not have been applied" in msg
+
+
 # -- actionable error hints --------------------------------------------------
 
 # Real shapes of Google's 403 bodies: the human message, and the machine
