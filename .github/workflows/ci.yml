@@ -40,3 +40,13 @@ jobs:
           python-version: "3.12"
       - name: Every command against hostile input; fail on any traceback
         run: python3 scripts/fuzz_cli.py
+
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Command-surface coverage may not regress
+        run: python3 scripts/parity.py --check

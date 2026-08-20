@@ -1,0 +1,616 @@
+# Upstream command surfaces — fetched evidence, not hand-edited.
+# Regenerate: python3 scripts/parity.py --refresh  (needs network)
+#
+# source	gog	https://raw.githubusercontent.com/openclaw/gogcli/main/docs/commands/README.md	2026-08-20	sha256:ca25e66b0e7fc943578a5591405b95900f4ec25e8e926c0fe40faec529281b89
+# source	gws	https://raw.githubusercontent.com/googleworkspace/cli/main/README.md	2026-08-20	sha256:499ff9600cc36f6c547e16ef5b56e7baee05afa35240c010b8873441928a39aa
+#
+gog	admin groups list
+gog	admin groups members add
+gog	admin groups members list
+gog	admin groups members remove
+gog	admin orgunits create
+gog	admin orgunits delete
+gog	admin orgunits get
+gog	admin orgunits list
+gog	admin orgunits update
+gog	admin users create
+gog	admin users delete
+gog	admin users get
+gog	admin users list
+gog	admin users suspend
+gog	analytics accounts
+gog	analytics report
+gog	api call
+gog	api describe
+gog	api list
+gog	appscript content
+gog	appscript create
+gog	appscript get
+gog	appscript run
+gog	auth add
+gog	auth alias list
+gog	auth alias set
+gog	auth alias unset
+gog	auth credentials list
+gog	auth credentials remove
+gog	auth credentials set
+gog	auth doctor
+gog	auth import
+gog	auth keep
+gog	auth keyring
+gog	auth list
+gog	auth manage
+gog	auth remove
+gog	auth service-account set
+gog	auth service-account status
+gog	auth service-account unset
+gog	auth services
+gog	auth setup
+gog	auth status
+gog	auth tokens delete
+gog	auth tokens export
+gog	auth tokens import
+gog	auth tokens list
+gog	backup cat
+gog	backup export
+gog	backup gmail push
+gog	backup init
+gog	backup push
+gog	backup status
+gog	backup verify
+gog	batch abort
+gog	batch begin
+gog	batch end
+gog	batch list
+gog	batch prune
+gog	batch show
+gog	calendar acl
+gog	calendar alias list
+gog	calendar alias set
+gog	calendar alias unset
+gog	calendar calendars
+gog	calendar changed
+gog	calendar colors
+gog	calendar conflicts
+gog	calendar create
+gog	calendar create-calendar
+gog	calendar delete
+gog	calendar delete-calendar
+gog	calendar event
+gog	calendar events
+gog	calendar focus-time
+gog	calendar freebusy
+gog	calendar move
+gog	calendar out-of-office
+gog	calendar propose-time
+gog	calendar raw
+gog	calendar respond
+gog	calendar search
+gog	calendar subscribe
+gog	calendar team
+gog	calendar time
+gog	calendar unsubscribe
+gog	calendar update
+gog	calendar users
+gog	calendar working-location
+gog	chat dm send
+gog	chat dm space
+gog	chat messages list
+gog	chat messages react
+gog	chat messages reactions create
+gog	chat messages reactions delete
+gog	chat messages reactions list
+gog	chat messages send
+gog	chat spaces create
+gog	chat spaces find
+gog	chat spaces list
+gog	chat threads list
+gog	classroom announcements assignees
+gog	classroom announcements create
+gog	classroom announcements delete
+gog	classroom announcements get
+gog	classroom announcements list
+gog	classroom announcements update
+gog	classroom courses archive
+gog	classroom courses create
+gog	classroom courses delete
+gog	classroom courses get
+gog	classroom courses join
+gog	classroom courses leave
+gog	classroom courses list
+gog	classroom courses unarchive
+gog	classroom courses update
+gog	classroom courses url
+gog	classroom coursework assignees
+gog	classroom coursework create
+gog	classroom coursework delete
+gog	classroom coursework get
+gog	classroom coursework list
+gog	classroom coursework update
+gog	classroom guardian-invitations create
+gog	classroom guardian-invitations get
+gog	classroom guardian-invitations list
+gog	classroom guardians delete
+gog	classroom guardians get
+gog	classroom guardians list
+gog	classroom invitations accept
+gog	classroom invitations create
+gog	classroom invitations delete
+gog	classroom invitations get
+gog	classroom invitations list
+gog	classroom materials create
+gog	classroom materials delete
+gog	classroom materials get
+gog	classroom materials list
+gog	classroom materials update
+gog	classroom profile get
+gog	classroom roster
+gog	classroom students add
+gog	classroom students get
+gog	classroom students list
+gog	classroom students remove
+gog	classroom submissions get
+gog	classroom submissions grade
+gog	classroom submissions list
+gog	classroom submissions reclaim
+gog	classroom submissions return
+gog	classroom submissions turn-in
+gog	classroom teachers add
+gog	classroom teachers get
+gog	classroom teachers list
+gog	classroom teachers remove
+gog	classroom topics create
+gog	classroom topics delete
+gog	classroom topics get
+gog	classroom topics list
+gog	classroom topics update
+gog	completion
+gog	config get
+gog	config keys
+gog	config list
+gog	config no-send list
+gog	config no-send remove
+gog	config no-send set
+gog	config path
+gog	config set
+gog	config unset
+gog	contacts create
+gog	contacts dedupe
+gog	contacts delete
+gog	contacts directory list
+gog	contacts directory search
+gog	contacts export
+gog	contacts get
+gog	contacts list
+gog	contacts other list
+gog	contacts other search
+gog	contacts raw
+gog	contacts search
+gog	contacts update
+gog	docs add-tab
+gog	docs cat
+gog	docs cell-style
+gog	docs cell-update
+gog	docs clear
+gog	docs comments add
+gog	docs comments delete
+gog	docs comments get
+gog	docs comments list
+gog	docs comments locate
+gog	docs comments poll
+gog	docs comments reopen
+gog	docs comments reply
+gog	docs comments resolve
+gog	docs copy
+gog	docs create
+gog	docs delete
+gog	docs delete-tab
+gog	docs edit
+gog	docs export
+gog	docs find-range
+gog	docs find-replace
+gog	docs footer create
+gog	docs footer delete
+gog	docs footer list
+gog	docs format
+gog	docs header create
+gog	docs header delete
+gog	docs header list
+gog	docs headings list
+gog	docs images list
+gog	docs info
+gog	docs insert
+gog	docs insert-date-chip
+gog	docs insert-file-chip
+gog	docs insert-footnote
+gog	docs insert-horizontal-rule
+gog	docs insert-image
+gog	docs insert-page-break
+gog	docs insert-person
+gog	docs insert-section-break
+gog	docs insert-table
+gog	docs list-tabs
+gog	docs named-range create
+gog	docs named-range delete
+gog	docs named-range list
+gog	docs named-range replace
+gog	docs page-layout
+gog	docs paragraphs list
+gog	docs raw
+gog	docs rename-tab
+gog	docs replace-image
+gog	docs section-columns
+gog	docs sed
+gog	docs structure
+gog	docs suggestions list
+gog	docs table-column delete
+gog	docs table-column insert
+gog	docs table-column-width
+gog	docs table-merge
+gog	docs table-row delete
+gog	docs table-row insert
+gog	docs table-row pin-header
+gog	docs table-row style
+gog	docs table-unmerge
+gog	docs tables list
+gog	docs tabs add
+gog	docs tabs delete
+gog	docs tabs list
+gog	docs tabs rename
+gog	docs update
+gog	docs write
+gog	download
+gog	drive activity query
+gog	drive audit sharing
+gog	drive audit user
+gog	drive bulk remove-public
+gog	drive bulk update-role
+gog	drive changes list
+gog	drive changes poll
+gog	drive changes serve
+gog	drive changes start-token
+gog	drive changes stop
+gog	drive changes watch
+gog	drive comments create
+gog	drive comments delete
+gog	drive comments get
+gog	drive comments list
+gog	drive comments reopen
+gog	drive comments reply
+gog	drive comments resolve
+gog	drive comments update
+gog	drive copy
+gog	drive delete
+gog	drive download
+gog	drive drives
+gog	drive du
+gog	drive get
+gog	drive inventory
+gog	drive labels file apply
+gog	drive labels file list
+gog	drive labels file remove
+gog	drive labels get
+gog	drive labels list
+gog	drive ls
+gog	drive mkdir
+gog	drive move
+gog	drive permissions
+gog	drive raw
+gog	drive rename
+gog	drive revisions get
+gog	drive revisions list
+gog	drive search
+gog	drive share
+gog	drive shortcut create
+gog	drive sync push
+gog	drive tree
+gog	drive unshare
+gog	drive upload
+gog	drive url
+gog	forms add-question
+gog	forms create
+gog	forms delete-question
+gog	forms get
+gog	forms move-question
+gog	forms publish
+gog	forms questions add
+gog	forms questions delete
+gog	forms questions move
+gog	forms raw
+gog	forms responses get
+gog	forms responses list
+gog	forms update
+gog	forms watch create
+gog	forms watch delete
+gog	forms watch list
+gog	forms watch renew
+gog	gmail archive
+gog	gmail attachment
+gog	gmail autoreply
+gog	gmail batch delete
+gog	gmail batch modify
+gog	gmail drafts create
+gog	gmail drafts delete
+gog	gmail drafts forward
+gog	gmail drafts get
+gog	gmail drafts list
+gog	gmail drafts reply
+gog	gmail drafts reply-all
+gog	gmail drafts send
+gog	gmail drafts update
+gog	gmail forward
+gog	gmail get
+gog	gmail history
+gog	gmail import
+gog	gmail labels create
+gog	gmail labels delete
+gog	gmail labels get
+gog	gmail labels list
+gog	gmail labels modify
+gog	gmail labels rename
+gog	gmail labels style
+gog	gmail mark-read
+gog	gmail messages modify
+gog	gmail messages search
+gog	gmail raw
+gog	gmail reply
+gog	gmail reply-all
+gog	gmail search
+gog	gmail send
+gog	gmail settings autoforward get
+gog	gmail settings autoforward update
+gog	gmail settings delegates add
+gog	gmail settings delegates get
+gog	gmail settings delegates list
+gog	gmail settings delegates remove
+gog	gmail settings filters create
+gog	gmail settings filters delete
+gog	gmail settings filters export
+gog	gmail settings filters get
+gog	gmail settings filters list
+gog	gmail settings forwarding create
+gog	gmail settings forwarding delete
+gog	gmail settings forwarding get
+gog	gmail settings forwarding list
+gog	gmail settings sendas create
+gog	gmail settings sendas delete
+gog	gmail settings sendas get
+gog	gmail settings sendas list
+gog	gmail settings sendas update
+gog	gmail settings sendas verify
+gog	gmail settings vacation get
+gog	gmail settings vacation update
+gog	gmail settings watch pull
+gog	gmail settings watch renew
+gog	gmail settings watch serve
+gog	gmail settings watch start
+gog	gmail settings watch status
+gog	gmail settings watch stop
+gog	gmail thread attachments
+gog	gmail thread get
+gog	gmail thread modify
+gog	gmail track key rotate
+gog	gmail track opens
+gog	gmail track setup
+gog	gmail track status
+gog	gmail trash
+gog	gmail unread
+gog	gmail url
+gog	groups list
+gog	groups members
+gog	keep attachment
+gog	keep create
+gog	keep delete
+gog	keep get
+gog	keep list
+gog	keep search
+gog	login
+gog	logout
+gog	ls
+gog	maps directions
+gog	maps distance
+gog	maps geocode
+gog	maps places details
+gog	maps places search
+gog	maps reverse-geocode
+gog	mcp
+gog	me
+gog	meet create
+gog	meet end
+gog	meet get
+gog	meet history
+gog	meet participants
+gog	meet update
+gog	open
+gog	people get
+gog	people me
+gog	people raw
+gog	people relations
+gog	people search
+gog	photos download
+gog	photos get
+gog	photos list
+gog	photos picker create
+gog	photos picker delete
+gog	photos picker download
+gog	photos picker get
+gog	photos picker list
+gog	photos picker wait
+gog	photos search
+gog	schema
+gog	search
+gog	searchconsole query
+gog	searchconsole searchanalytics query
+gog	searchconsole sitemaps delete
+gog	searchconsole sitemaps get
+gog	searchconsole sitemaps list
+gog	searchconsole sitemaps submit
+gog	searchconsole sites get
+gog	searchconsole sites list
+gog	send
+gog	sheets add-tab
+gog	sheets append
+gog	sheets banding clear
+gog	sheets banding list
+gog	sheets banding set
+gog	sheets batch-update
+gog	sheets chart create
+gog	sheets chart delete
+gog	sheets chart get
+gog	sheets chart list
+gog	sheets chart update
+gog	sheets clear
+gog	sheets conditional-format add
+gog	sheets conditional-format clear
+gog	sheets conditional-format list
+gog	sheets copy
+gog	sheets copy-paste
+gog	sheets create
+gog	sheets datasource describe
+gog	sheets datasource list
+gog	sheets datasource table describe
+gog	sheets datasource table list
+gog	sheets datasource table read
+gog	sheets delete-dimension
+gog	sheets delete-tab
+gog	sheets export
+gog	sheets filter set
+gog	sheets find-replace
+gog	sheets format
+gog	sheets freeze
+gog	sheets get
+gog	sheets insert
+gog	sheets links get
+gog	sheets links set
+gog	sheets merge
+gog	sheets metadata
+gog	sheets named-ranges add
+gog	sheets named-ranges delete
+gog	sheets named-ranges get
+gog	sheets named-ranges list
+gog	sheets named-ranges update
+gog	sheets notes
+gog	sheets number-format
+gog	sheets raw
+gog	sheets read-format
+gog	sheets rename-tab
+gog	sheets reorder-tab
+gog	sheets resize-columns
+gog	sheets resize-rows
+gog	sheets table append
+gog	sheets table clear
+gog	sheets table create
+gog	sheets table delete
+gog	sheets table get
+gog	sheets table list
+gog	sheets unmerge
+gog	sheets update
+gog	sheets update-note
+gog	sheets validation clear
+gog	sheets validation get
+gog	sheets validation set
+gog	sites get
+gog	sites list
+gog	sites search
+gog	sites url
+gog	slides add-slide
+gog	slides bullets
+gog	slides copy
+gog	slides create
+gog	slides create-from-markdown
+gog	slides create-from-template
+gog	slides delete-slide
+gog	slides duplicate-slide
+gog	slides element alt-text
+gog	slides element create-line
+gog	slides element create-shape
+gog	slides element delete
+gog	slides element group
+gog	slides element style
+gog	slides element transform
+gog	slides element ungroup
+gog	slides element z-order
+gog	slides export
+gog	slides info
+gog	slides insert-image
+gog	slides insert-text
+gog	slides link
+gog	slides list-slides
+gog	slides locate
+gog	slides move-slide
+gog	slides new-slide
+gog	slides raw
+gog	slides read-slide
+gog	slides replace-slide
+gog	slides replace-text
+gog	slides style-text
+gog	slides table border style
+gog	slides table cell style
+gog	slides table column delete
+gog	slides table column insert
+gog	slides table column size
+gog	slides table create
+gog	slides table merge
+gog	slides table row delete
+gog	slides table row insert
+gog	slides table row size
+gog	slides table unmerge
+gog	slides thumbnail
+gog	slides update-notes
+gog	status
+gog	tasks add
+gog	tasks clear
+gog	tasks delete
+gog	tasks done
+gog	tasks get
+gog	tasks list
+gog	tasks lists create
+gog	tasks lists list
+gog	tasks raw
+gog	tasks undo
+gog	tasks update
+gog	time now
+gog	update status
+gog	upload
+gog	version
+gog	whoami
+gog	youtube activities list
+gog	youtube channels list
+gog	youtube comments list
+gog	youtube playlists add
+gog	youtube playlists create
+gog	youtube playlists delete
+gog	youtube playlists items list
+gog	youtube playlists list
+gog	youtube playlists remove
+gog	youtube search list
+gog	youtube subscriptions list
+gog	youtube subscriptions subscribe
+gog	youtube subscriptions unsubscribe
+gog	youtube videos list
+gog	zoom auth doctor
+gog	zoom auth setup
+gws	calendar +agenda
+gws	calendar +insert
+gws	chat +send
+gws	docs +write
+gws	drive +upload
+gws	events +renew
+gws	events +subscribe
+gws	gmail +forward
+gws	gmail +reply
+gws	gmail +reply-all
+gws	gmail +send
+gws	gmail +triage
+gws	gmail +watch
+gws	modelarmor +create-template
+gws	modelarmor +sanitize-prompt
+gws	modelarmor +sanitize-response
+gws	script +push
+gws	sheets +append
+gws	sheets +read
+gws	workflow +email-to-task
+gws	workflow +file-announce
+gws	workflow +meeting-prep
+gws	workflow +standup-report
+gws	workflow +weekly-digest

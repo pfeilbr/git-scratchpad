@@ -34,7 +34,7 @@ flowchart LR
 CI (`.github/workflows/ci.yml`) runs this exact script — not a parallel
 test configuration — on every push, across Python 3.10–3.13.
 
-## Three gates, three kinds of confidence
+## Four gates, four kinds of confidence
 
 `verify.py` is the fast one and covers almost everything. But every test it
 runs drives `main()` in-process with the transport faked, which is blind to
@@ -88,6 +88,37 @@ note the shape of the capture in `run_case`: stdout is a `TextIOWrapper`
 over a `BytesIO`, not a `StringIO`, because `drive download` writes through
 `sys.stdout.buffer` and a `StringIO` has none. The first version reported
 that AttributeError as a finding — a bug no user could ever hit.
+
+The fourth checks a claim rather than a behaviour. This project exists to
+combine the command surfaces of `gws` and `gog`, and a coverage claim that
+nothing measures is one that quietly stops being true.
+
+```console
+$ python3 scripts/parity.py --check
+gws: 10 covered, 5 out of scope, 9 missing of 24
+gog: 97 covered, 41 out of scope, 448 missing of 586
+PARITY OK: no coverage regression
+```
+
+Two files keep the two kinds of knowledge apart. `parity/upstream.tsv` is
+evidence: both projects' own published command lists, stamped with the URL,
+the date and a digest of what was read, so any row can be re-derived.
+`parity/mapping.tsv` is judgment: which upstream commands this tool provides
+under a different name, and which it deliberately will not, each with a
+reason someone can argue with. `--refresh` is the only part that touches the
+network, and CI never runs it.
+
+The ratchet fails on *regression*, not on absence. 448 gog commands are
+missing and a gate that is red from day one is a gate people learn to skip,
+so missing is the roadmap — `scripts/parity.py --missing gog` prints it —
+while a drop in the covered count is the alarm.
+
+Two properties of the gate itself are worth knowing, because both were bugs
+first. An `alias` row is only counted once its target is confirmed to exist
+in the parser, so deleting a command cannot hide behind a mapping that still
+names it. And `--check` never writes: it shares its drift detection with the
+README writer, so an earlier version repaired the drift on the way past and
+the second run disagreed with the first.
 
 `tests/test_integration.py` covers the same request path inside the fast
 gate, running the CLI as a subprocess against a loopback server. That is

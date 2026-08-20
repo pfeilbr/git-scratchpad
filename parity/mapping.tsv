@@ -1,0 +1,100 @@
+# How each upstream command maps onto this CLI. Hand-edited judgment; the
+# facts it refers to live in upstream.tsv.
+#
+# Columns: tool <TAB> upstream command <TAB> status <TAB> target-or-reason
+#
+#   alias     this CLI provides the capability under the name in column 4.
+#             Counted as covered: a user can do the thing, though they may
+#             have to spell it differently. The substitute is named here so
+#             the claim can be checked rather than taken on trust.
+#   excluded  this CLI will not provide it, for the reason in column 4.
+#             Removed from the denominator, so it is never counted against
+#             coverage — which is exactly why each reason has to be one
+#             somebody can argue with.
+#
+# Anything absent from this file and from the CLI is simply missing, and shows
+# up in the "Not yet" column. That is the roadmap, not a failure:
+# `python3 scripts/parity.py --missing gog` prints it.
+#
+gog	auth add	alias	auth login
+gog	auth alias unset	alias	auth alias rm
+gog	auth remove	alias	auth logout
+gog	backup cat	excluded	encrypted account backups need an AES implementation, which the standard library does not provide
+gog	backup export	excluded	encrypted account backups need an AES implementation, which the standard library does not provide
+gog	backup gmail push	excluded	encrypted account backups need an AES implementation, which the standard library does not provide
+gog	backup init	excluded	encrypted account backups need an AES implementation, which the standard library does not provide
+gog	backup push	excluded	encrypted account backups need an AES implementation, which the standard library does not provide
+gog	backup status	excluded	encrypted account backups need an AES implementation, which the standard library does not provide
+gog	backup verify	excluded	encrypted account backups need an AES implementation, which the standard library does not provide
+gog	calendar event	alias	calendar get
+gog	download	alias	drive download
+gog	drive audit sharing	alias	drive audit
+gog	drive delete	alias	drive trash
+gog	drive get	alias	drive info
+gog	drive move	alias	drive mv
+gog	gmail attachment	alias	gmail attachments
+gog	gmail batch modify	alias	gmail batch-modify
+gog	gmail messages search	alias	gmail search
+gog	gmail settings filters create	alias	gmail filters create
+gog	gmail settings filters delete	alias	gmail filters rm
+gog	gmail settings filters list	alias	gmail filters list
+gog	gmail settings vacation get	alias	gmail vacation show
+gog	gmail settings vacation update	alias	gmail vacation set
+gog	gmail thread get	alias	gmail thread
+gog	gmail unread	alias	gmail mark-unread
+gog	login	alias	auth login
+gog	logout	alias	auth logout
+gog	ls	alias	drive ls
+gog	maps directions	excluded	Google Maps Platform is a separately billed Cloud product, not Workspace
+gog	maps distance	excluded	Google Maps Platform is a separately billed Cloud product, not Workspace
+gog	maps geocode	excluded	Google Maps Platform is a separately billed Cloud product, not Workspace
+gog	maps places details	excluded	Google Maps Platform is a separately billed Cloud product, not Workspace
+gog	maps places search	excluded	Google Maps Platform is a separately billed Cloud product, not Workspace
+gog	maps reverse-geocode	excluded	Google Maps Platform is a separately billed Cloud product, not Workspace
+gog	mcp	excluded	an MCP server is a different program shape from a CLI and belongs in its own binary
+gog	photos download	excluded	Photos Library API is consumer Google and its scopes now cover only app-created media
+gog	photos get	excluded	Photos Library API is consumer Google and its scopes now cover only app-created media
+gog	photos list	excluded	Photos Library API is consumer Google and its scopes now cover only app-created media
+gog	photos picker create	excluded	Photos Library API is consumer Google and its scopes now cover only app-created media
+gog	photos picker delete	excluded	Photos Library API is consumer Google and its scopes now cover only app-created media
+gog	photos picker download	excluded	Photos Library API is consumer Google and its scopes now cover only app-created media
+gog	photos picker get	excluded	Photos Library API is consumer Google and its scopes now cover only app-created media
+gog	photos picker list	excluded	Photos Library API is consumer Google and its scopes now cover only app-created media
+gog	photos picker wait	excluded	Photos Library API is consumer Google and its scopes now cover only app-created media
+gog	photos search	excluded	Photos Library API is consumer Google and its scopes now cover only app-created media
+gog	search	alias	drive search
+gog	send	alias	gmail send
+gog	status	alias	auth status
+gog	update status	excluded	checking for new releases is the job of whatever package manager installed this
+gog	upload	alias	drive upload
+gog	youtube activities list	excluded	YouTube Data API is consumer Google, not part of Google Workspace
+gog	youtube channels list	excluded	YouTube Data API is consumer Google, not part of Google Workspace
+gog	youtube comments list	excluded	YouTube Data API is consumer Google, not part of Google Workspace
+gog	youtube playlists add	excluded	YouTube Data API is consumer Google, not part of Google Workspace
+gog	youtube playlists create	excluded	YouTube Data API is consumer Google, not part of Google Workspace
+gog	youtube playlists delete	excluded	YouTube Data API is consumer Google, not part of Google Workspace
+gog	youtube playlists items list	excluded	YouTube Data API is consumer Google, not part of Google Workspace
+gog	youtube playlists list	excluded	YouTube Data API is consumer Google, not part of Google Workspace
+gog	youtube playlists remove	excluded	YouTube Data API is consumer Google, not part of Google Workspace
+gog	youtube search list	excluded	YouTube Data API is consumer Google, not part of Google Workspace
+gog	youtube subscriptions list	excluded	YouTube Data API is consumer Google, not part of Google Workspace
+gog	youtube subscriptions subscribe	excluded	YouTube Data API is consumer Google, not part of Google Workspace
+gog	youtube subscriptions unsubscribe	excluded	YouTube Data API is consumer Google, not part of Google Workspace
+gog	youtube videos list	excluded	YouTube Data API is consumer Google, not part of Google Workspace
+gog	zoom auth doctor	excluded	Zoom is not a Google service and is outside the Google Workspace surface
+gog	zoom auth setup	excluded	Zoom is not a Google service and is outside the Google Workspace surface
+gws	calendar +agenda	alias	calendar agenda
+gws	calendar +insert	alias	calendar create
+gws	chat +send	alias	chat send
+gws	docs +write	alias	docs append
+gws	drive +upload	alias	drive upload
+gws	events +renew	excluded	Workspace Events push subscriptions need a Pub/Sub topic and a long-lived listener process
+gws	events +subscribe	excluded	Workspace Events push subscriptions need a Pub/Sub topic and a long-lived listener process
+gws	gmail +forward	alias	gmail forward
+gws	gmail +reply	alias	gmail reply
+gws	gmail +send	alias	gmail send
+gws	modelarmor +create-template	excluded	Model Armor is a Google Cloud security product, not part of Google Workspace
+gws	modelarmor +sanitize-prompt	excluded	Model Armor is a Google Cloud security product, not part of Google Workspace
+gws	modelarmor +sanitize-response	excluded	Model Armor is a Google Cloud security product, not part of Google Workspace
+gws	sheets +append	alias	sheets append
+gws	sheets +read	alias	sheets read
