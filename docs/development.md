@@ -34,7 +34,7 @@ flowchart LR
 CI (`.github/workflows/ci.yml`) runs this exact script — not a parallel
 test configuration — on every push, across Python 3.10–3.13.
 
-## Two gates, two kinds of confidence
+## Three gates, three kinds of confidence
 
 `verify.py` is the fast one and covers almost everything. But every test it
 runs drives `main()` in-process with the transport faked, which is blind to
@@ -53,6 +53,41 @@ HTTP server and `api call`'s full-URL form — genuine request round-trips.
 Still no network: `HOME`, `GSUITE_CONFIG_DIR` and the ADC path are all
 sandboxed so your own credentials cannot influence the result. CI runs it as
 a second job.
+
+The third generalises rather than adds cases. Six times now a command has
+answered ordinary input with a Python traceback — a closed pipe, a DNS
+failure, a non-JSON reply, a corrupt config file, an odd line separator in a
+mail header, a missing `--attach` file — and every one was found by hand,
+after the fact. What they share is not a subsystem but a property that
+should hold for all 148 commands at once: *whatever the user types, they get
+a message and an exit code.* That is what the fuzzer checks.
+
+```console
+$ python3 scripts/fuzz_cli.py
+FUZZ OK: 5960 cases, no tracebacks
+
+$ python3 scripts/fuzz_cli.py -v      # name each case as it runs
+```
+
+It walks the real parser tree, synthesises an invocation for every leaf
+command filling each argument with one of ten fixed hostile values
+(traversal, URL punctuation, embedded newlines, empty, wide/emoji, a path
+that does not exist), and runs each against four canned replies including a
+200 whose body is not JSON. No randomness and no seed: the same 5960 cases
+in the same order every run, so a failure is reproducible from its printed
+argv alone. It is offline — `transport.request` is stubbed and the OAuth
+loopback never binds a port — and takes about 75 seconds. CI runs it as a
+third job.
+
+Its first run found three live bugs that 500 tests had not: `agenda --date
+tomorrow`, `sheets rm-tab --tab Sheet1`, and any command at all when a proxy
+answers `200 text/html` instead of Google.
+
+A fuzzer that reports a defect in its own harness is worse than none, so
+note the shape of the capture in `run_case`: stdout is a `TextIOWrapper`
+over a `BytesIO`, not a `StringIO`, because `drive download` writes through
+`sys.stdout.buffer` and a `StringIO` has none. The first version reported
+that AttributeError as a finding — a bug no user could ever hit.
 
 `tests/test_integration.py` covers the same request path inside the fast
 gate, running the CLI as a subprocess against a loopback server. That is

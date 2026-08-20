@@ -5,6 +5,7 @@ import json
 
 from gsuite.api import Client, quote_id
 from gsuite.cmdreg import Cmd, arg, register_service
+from gsuite.errors import CLIError
 from gsuite.output import confirm, emit
 
 BASE = "https://sheets.googleapis.com/v4/spreadsheets"
@@ -93,10 +94,25 @@ def cmd_add_tab(args) -> int:
     return 0
 
 
+def _sheet_id(value: str) -> int:
+    """The numeric sheetId `sheets tabs` prints, not the tab's name.
+
+    `--tab Sheet1` is the obvious mistake to make, since that is what the tab
+    is called everywhere in the UI. Bare `int()` answered it with a
+    ValueError traceback instead of naming the command that shows the id.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise CLIError(f"bad tab id: {value} (want the numeric sheetId that "
+                       "`gsuite sheets tabs ID` prints, not the tab name)"
+                       ) from exc
+
+
 def cmd_rm_tab(args) -> int:
     Client.for_args(args).post(
         f"{BASE}/{quote_id(args.id)}:batchUpdate",
-        json_body={"requests": [{"deleteSheet": {"sheetId": int(args.tab)}}]})
+        json_body={"requests": [{"deleteSheet": {"sheetId": _sheet_id(args.tab)}}]})
     confirm("removed tab", args.tab)
     return 0
 

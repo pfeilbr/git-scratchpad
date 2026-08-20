@@ -39,10 +39,7 @@ def _parse_point(value: str) -> tuple[str, str]:
         except ValueError as exc:
             raise CLIError(f"bad datetime: {value} (want YYYY-MM-DDTHH:MM)") from exc
         return "dateTime", parsed.isoformat()
-    try:
-        dt.date.fromisoformat(value)
-    except ValueError as exc:
-        raise CLIError(f"bad date: {value} (want YYYY-MM-DD)") from exc
+    _date(value)
     return "date", value
 
 
@@ -86,8 +83,23 @@ def _midnight(day: dt.date, tz: dt.tzinfo) -> str:
         "+00:00", "Z")
 
 
+def _date(value: str) -> dt.date:
+    """A calendar date the user typed, or a CLIError saying what was wanted.
+
+    `--date tomorrow` and `--from "next week"` are the natural things to try,
+    and argparse accepts both as plain strings. Bare `date.fromisoformat`
+    then raised ValueError through main() as a traceback; `_parse_point`
+    already guarded `create`/`update` this way, so `agenda` and `freebusy`
+    were the two that still bit.
+    """
+    try:
+        return dt.date.fromisoformat(value)
+    except ValueError as exc:
+        raise CLIError(f"bad date: {value} (want YYYY-MM-DD)") from exc
+
+
 def _day_bounds(date_str: str, tz: dt.tzinfo) -> tuple[str, str]:
-    day = dt.date.fromisoformat(date_str)
+    day = _date(date_str)
     return _midnight(day, tz), _midnight(day + dt.timedelta(days=1), tz)
 
 
@@ -95,7 +107,7 @@ def _to_rfc3339(value: str | None, tz: dt.tzinfo) -> str | None:
     """A bare YYYY-MM-DD means local midnight; a full instant passes through."""
     if value is None or "T" in value:
         return value
-    return _midnight(dt.date.fromisoformat(value), tz)
+    return _midnight(_date(value), tz)
 
 
 def _emit_window(args, time_min: str | None, time_max: str | None,

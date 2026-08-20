@@ -327,3 +327,32 @@ def test_update_all_day_start_stays_a_bare_date(cal):
     body = json.loads(ft.calls[0]["data"])
     # An all-day date names no zone, whatever --tz says.
     assert body == {"start": {"date": "2026-01-05"}}
+
+
+# -- dates the user typed wrong ----------------------------------------------
+
+@pytest.mark.parametrize("argv", [
+    ("calendar", "agenda", "--date", "not-a-date"),
+    ("calendar", "agenda", "--date", "2026-13-45"),
+    ("calendar", "freebusy", "--from", "tomorrow", "--to", "2026-01-06"),
+    ("calendar", "freebusy", "--from", "2026-01-05", "--to", "next week"),
+])
+def test_unparseable_dates_are_clean_errors(cal, argv):
+    """`--date tomorrow` is an ordinary typo, not a crash.
+
+    `_parse_point` guards the date arguments of `create`/`update`, but
+    `_day_bounds` and `_to_rfc3339` — the ones behind `agenda` and
+    `freebusy` — called `date.fromisoformat` bare, so a value argparse
+    happily accepted as a string reached the stdlib and raised ValueError
+    through main().
+    """
+    ft, run = cal
+    run(*argv, expect=1)
+    assert ft.calls == [], "a bad date must be caught before any request"
+
+
+def test_the_date_error_names_the_value_and_the_format(cal):
+    ft, run = cal
+    with pytest.raises(CLIError) as exc:
+        calendar_svc._day_bounds("tomorrow", ZoneInfo("UTC"))
+    assert "tomorrow" in str(exc.value) and "YYYY-MM-DD" in str(exc.value)

@@ -15,3 +15,14 @@ def test_ci_runs_the_verify_gate_on_push():
     assert "push" in text
     assert "actions/setup-python" in text
     assert "pytest" in text  # the only dev dependency gets installed
+
+
+def test_ci_runs_the_traceback_fuzzer():
+    """The gate that generalises six hand-found bugs must not fall out of CI.
+
+    `verify.py` proves the behaviours someone thought to write a test for;
+    the fuzzer proves the one property that holds for *every* command — no
+    input yields a traceback. It only pays for itself if it runs on push.
+    """
+    assert os.path.exists(os.path.join(ROOT, "scripts", "fuzz_cli.py"))
+    assert "fuzz_cli.py" in open(WORKFLOW).read()

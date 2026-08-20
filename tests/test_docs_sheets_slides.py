@@ -215,3 +215,15 @@ def test_sheets_rm_tab_coerces_sheet_id_to_int(gsvc):
     assert json.loads(ft.calls[0]["data"]) == {
         "requests": [{"deleteSheet": {"sheetId": 77}}]}
     assert "removed tab" in out and "77" in out
+
+
+def test_rm_tab_rejects_a_non_numeric_tab_id(gsvc):
+    """`--tab Sheet1` is the obvious mistake: tabs have names, ids are ints.
+
+    `int(args.tab)` raised ValueError straight through main(), so the user
+    got a traceback instead of being told to pass the numeric sheetId that
+    `sheets tabs` prints.
+    """
+    ft, run = gsvc
+    run("sheets", "rm-tab", "sheet-id", "--tab", "Sheet1", expect=1)
+    assert ft.calls == [], "nothing should be sent for an unusable tab id"

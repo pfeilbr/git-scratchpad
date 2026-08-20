@@ -127,7 +127,7 @@ class Client:
                                                         self.email, method))
         if raw:
             return body
-        return json.loads(body) if body else {}
+        return _parse_json(body, status, url)
 
     def get(self, url, **kw):
         return self.request("GET", url, **kw)
@@ -257,6 +257,38 @@ def _hint(status: int, body: bytes, url: str, email: str,
             return (" — that API is not enabled for your project; enable it "
                     "in the Google Cloud console under APIs & Services")
     return ""
+
+
+def _parse_json(body: bytes, status: int, url: str):
+    """The response body as a dict — or a CLIError naming what arrived instead.
+
+    Every typed command reads fields off this dict, so it has to be JSON. But
+    a 2xx is no guarantee that it is: a captive portal answers any URL with a
+    sign-in page, a corporate proxy substitutes a block notice, a load
+    balancer in front of a dead backend replies `ok` in plain text. Each of
+    those is a 200 whose body `json.loads` cannot read, and the bare call
+    raised JSONDecodeError past main()'s handler as a traceback.
+
+    The excerpt matters as much as the message. "Expected JSON" alone leaves
+    the user guessing between a Google outage and their own network; the
+    first line of the body usually says which, because a captive portal
+    signs its work.
+    """
+    if not body:
+        return {}
+    try:
+        return json.loads(body)
+    except ValueError as exc:
+        raise CLIError(
+            f"{status} response from {urllib.parse.urlsplit(url).netloc} was "
+            f"not JSON: {_excerpt(body)} — this is usually a proxy or captive "
+            "portal answering instead of Google") from exc
+
+
+def _excerpt(body: bytes, limit: int = 200) -> str:
+    """A one-line, printable sample of a body that is not what we expected."""
+    text = body[:limit].decode(errors="replace")
+    return " ".join(text.split()) + ("…" if len(body) > limit else "")
 
 
 def _error_message(body: bytes) -> str:

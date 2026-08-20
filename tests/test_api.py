@@ -397,3 +397,56 @@ def test_emit_json_mode(capsys):
 def test_emit_callable_getter(capsys):
     emit(FakeArgs(), [{"a": {"b": "deep"}}], [("X", lambda r: r["a"]["b"])])
     assert "deep" in capsys.readouterr().out
+
+
+# -- a 2xx whose body is not JSON --------------------------------------------
+
+def test_non_json_success_body_is_an_error_not_a_traceback(client):
+    """A 200 carrying HTML is a captive portal or a proxy, not a bug.
+
+    `request()` ended with `json.loads(body)`, so anything that answered a
+    Google URL with non-JSON — a hotel wifi splash page, a corporate proxy's
+    block notice, a load balancer's plain-text "ok" — surfaced as an uncaught
+    JSONDecodeError with a traceback. `api call` already handled this by
+    asking for `raw=True`; every one of the other 147 commands did not.
+    """
+    c, ft = client
+    ft.add("GET", "/v1/things", b"<html>Sign in to continue</html>")
+    with pytest.raises(CLIError) as exc:
+        c.get("https://example.googleapis.com/v1/things")
+    message = str(exc.value)
+    assert "200" in message, "the status is the first thing to check"
+    assert "JSON" in message
+    # The body is the evidence; without it the user cannot tell a proxy page
+    # from a Google outage.
+    assert "Sign in to continue" in message
+
+
+def test_non_json_error_body_still_reports_googles_own_text(client, sleeps):
+    """The non-JSON guard must not shadow the existing 4xx/5xx path.
+
+    A proxy's 502 is the case that carries both properties at once: an error
+    status *and* an unparseable body. It must stay an APIError quoting the
+    gateway's own words, not become the generic "not JSON" message.
+    """
+    c, ft = client
+    for _ in range(4):  # a 502 on a GET is retried; every attempt needs a route
+        ft.add("GET", "/v1/things", b"upstream connect error", status=502)
+    with pytest.raises(APIError) as exc:
+        c.get("https://example.googleapis.com/v1/things")
+    assert "upstream connect error" in str(exc.value)
+
+
+def test_raw_requests_still_get_the_bytes_unparsed(client):
+    """`drive download` and `api call` depend on bypassing the guard."""
+    c, ft = client
+    ft.add("GET", "/v1/things", b"\x89PNG\r\n\x1a\n not json")
+    assert c.get("https://example.googleapis.com/v1/things",
+                 raw=True) == b"\x89PNG\r\n\x1a\n not json"
+
+
+def test_an_empty_body_is_still_an_empty_dict(client):
+    """A 204-shaped reply from delete/patch has nothing to parse."""
+    c, ft = client
+    ft.add("DELETE", "/v1/things/1", b"")
+    assert c.delete("https://example.googleapis.com/v1/things/1") == {}

@@ -87,14 +87,26 @@ dependencies** (Python ≥ 3.10 standard library only).
   interrupted run cannot leave an unparseable `accounts.json`.
 - `api call` keeps repeated `--param` keys and prints non-JSON replies
   instead of raising.
+- A success response whose body is not JSON — a captive portal's sign-in
+  page, a proxy's block notice, a gateway's plain-text `ok` — is reported as
+  an error naming the status, the host and the first line of what arrived.
+  Previously only `api call` survived it; every other command raised
+  `JSONDecodeError`.
+- Dates that are not `YYYY-MM-DD` (`agenda --date tomorrow`,
+  `freebusy --from "next week"`) and non-numeric `sheets rm-tab --tab`
+  values are named errors rather than tracebacks, and are rejected before
+  anything is sent.
 
 ### Engineering
 
 - Built strictly red-green: every change proved failing before it was
   implemented.
-- Two gates. `scripts/verify.py` compiles, runs the full suite, and fails on
-  stale generated docs. `scripts/smoke.py` installs the project into a
+- Three gates. `scripts/verify.py` compiles, runs the full suite, and fails
+  on stale generated docs. `scripts/smoke.py` installs the project into a
   throwaway virtualenv and drives the real console script, including genuine
-  request round-trips against a loopback server. Both run in CI.
+  request round-trips against a loopback server. `scripts/fuzz_cli.py` drives
+  every command with hostile input — 5960 fixed, deterministic cases — and
+  fails on any traceback, which is how the three fixes above were found. All
+  three run in CI.
 - The command reference and the README's command table are generated from the
   CLI's own parser tree, so documentation cannot drift from the code.
