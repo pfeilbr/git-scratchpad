@@ -1,6 +1,6 @@
-"""`gsuite gmail` — search, read, threads, attachments, send, reply,
-forward, labels, drafts, trash, settings (vacation, signature, filters),
-batch label edits."""
+"""`gsuite gmail` — search, triage, read, threads, attachments, send, reply,
+reply-all, forward, labels, drafts, trash, settings (vacation, signature,
+filters, send-as, delegates, forwarding), batch label edits."""
 from __future__ import annotations
 
 import base64
@@ -8,6 +8,7 @@ import json
 import mimetypes
 import os
 from email.message import EmailMessage
+from email.utils import formataddr, getaddresses
 from typing import Sequence
 
 from gsuite.api import Client, quote_id
@@ -94,27 +95,56 @@ def _build_mime(to: str, subject: str, body: str, cc: str | None = None,
     return base64.urlsafe_b64encode(msg.as_bytes()).decode()
 
 
+# `format=metadata` returns *only* the headers named here, so a header left
+# off this list reads as absent on every real message — which is how `reply`
+# came to prefer a Reply-To it never asked for. Cc and Reply-To earn their
+# place: `reply-all` addresses from them and `reply` prefers Reply-To.
+META_HEADERS = ["From", "To", "Cc", "Reply-To", "Subject", "Date", "Message-ID"]
+
+# What `triage` means by "needs attention": unread, and still in the inbox.
+TRIAGE_QUERY = "is:unread in:inbox"
+
+
 def _fetch_meta(client: Client, msg_id: str) -> dict:
     return client.get(f"{BASE}/messages/{quote_id(msg_id)}", params={
         "format": "metadata",
-        "metadataHeaders": ["From", "To", "Subject", "Date", "Message-ID"],
+        "metadataHeaders": META_HEADERS,
     })
 
 
-def cmd_search(args) -> int:
-    client = Client.for_args(args)
-    refs = client.paged(f"{BASE}/messages", params={"q": args.query},
-                        key="messages", limit=args.max)
+def _summaries(client: Client, query: str, limit: int) -> list[dict]:
+    """Search, then fetch each hit's headers: one row per matching message.
+
+    A search response carries ids and nothing else, so every listing that
+    shows who a message is from costs one round trip per hit. Both listings
+    that do (`search`, `triage`) differ only in the query they start from.
+    """
     rows = []
-    for ref in refs:
+    for ref in client.paged(f"{BASE}/messages", params={"q": query},
+                            key="messages", limit=limit):
         message = _fetch_meta(client, ref["id"])
         headers = _headers(message)
         rows.append({"id": message["id"], "date": headers.get("date", ""),
                      "from": headers.get("from", ""),
                      "subject": headers.get("subject", ""),
                      "snippet": message.get("snippet", "")})
+    return rows
+
+
+def cmd_search(args) -> int:
+    rows = _summaries(Client.for_args(args), args.query, args.max)
     emit(args, rows, [("ID", "id"), ("DATE", "date"), ("FROM", "from"),
                       ("SUBJECT", "subject")])
+    return 0
+
+
+def cmd_triage(args) -> int:
+    rows = _summaries(Client.for_args(args), TRIAGE_QUERY, args.max)
+    # Sender and subject lead — triage is read left to right, deciding per
+    # row — but the id still comes first, because the whole point of the
+    # listing is to feed the id to the command that deals with the message.
+    emit(args, rows, [("ID", "id"), ("FROM", "from"), ("SUBJECT", "subject"),
+                      ("DATE", "date")])
     return 0
 
 
@@ -199,7 +229,50 @@ def cmd_send(args) -> int:
     return 0
 
 
-def cmd_reply(args) -> int:
+def _addresses(label: str, raw: str) -> list[tuple[str, str]]:
+    """One recipient header as (display name, address) pairs.
+
+    The value is checked with `_header` *before* it is parsed, not after:
+    `getaddresses` treats a smuggled `\\nBcc:` differently depending on the
+    Python patch level — older ones hand the smuggled header back as one
+    more address, newer ones return nothing at all — so leaving the check
+    until afterwards would either forward the injection or silently reply
+    to no one. Both are worse than saying which header is malformed.
+    """
+    _header(label, raw)
+    return [(name, addr) for name, addr in getaddresses([raw]) if addr]
+
+
+def _reply_all_recipients(headers: dict, me: str) -> tuple[str, str]:
+    """(To, Cc) for a reply to everyone still worth replying to.
+
+    Reply-all is the sender plus everyone they addressed, minus you: mail
+    you sent yourself a copy of should not land in your own inbox again.
+    Addresses are compared case-insensitively (the local part is officially
+    case-sensitive, but no mail provider treats it that way) and each one is
+    kept only the first time it appears, since the sender is usually on the
+    To line too and nobody wants two copies.
+    """
+    seen = {me.lower()} if me else set()
+
+    def pick(label: str, raw: str) -> str:
+        kept = []
+        for name, address in _addresses(label, raw):
+            if address.lower() in seen:
+                continue
+            seen.add(address.lower())
+            kept.append(formataddr((name, address)))
+        return ", ".join(kept)
+
+    sender = ("Reply-To", headers["reply-to"]) if headers.get("reply-to") \
+        else ("From", headers.get("from", ""))
+    to = ", ".join(part for part in (pick(*sender),
+                                     pick("To", headers.get("to", "")))
+                   if part)
+    return to, pick("Cc", headers.get("cc", ""))
+
+
+def _reply(args, *, to_all: bool) -> int:
     client = Client.for_args(args)
     original = _fetch_meta(client, args.id)
     headers = _headers(original)
@@ -210,10 +283,25 @@ def cmd_reply(args) -> int:
     if headers.get("message-id"):
         extra["In-Reply-To"] = headers["message-id"]
         extra["References"] = headers["message-id"]
-    raw = _build_mime(headers.get("reply-to") or headers.get("from", ""),
-                      subject, args.body, extra_headers=extra)
+    cc = None
+    if to_all:
+        to, cc = _reply_all_recipients(headers, client.email)
+        if not to:
+            raise CLIError(f"no one to reply to on {args.id}: "
+                           "you are the only participant")
+    else:
+        to = headers.get("reply-to") or headers.get("from", "")
+    raw = _build_mime(to, subject, args.body, cc=cc, extra_headers=extra)
     _send(client, raw, thread_id=original.get("threadId"))
     return 0
+
+
+def cmd_reply(args) -> int:
+    return _reply(args, to_all=False)
+
+
+def cmd_reply_all(args) -> int:
+    return _reply(args, to_all=True)
 
 
 def cmd_forward(args) -> int:
@@ -444,6 +532,8 @@ def register(subparsers) -> None:
     register_service(subparsers, "gmail", "search, read, send, labels, drafts", [
         Cmd("search", cmd_search, "search messages (Gmail query syntax)",
             (arg("query"), max_flag(20))),
+        Cmd("triage", cmd_triage, "summarize unread inbox mail",
+            (max_flag(20),)),
         Cmd("get", cmd_get, "read a message (plain-text body)", (arg("id"),)),
         Cmd("thread", cmd_thread, "read a whole thread (every message)",
             (arg("id"),)),
@@ -452,7 +542,10 @@ def register(subparsers) -> None:
              arg("-o", "--output", metavar="DIR",
                  help="download attachments into this directory"))),
         Cmd("send", cmd_send, "send an email", COMPOSE_ARGS),
-        Cmd("reply", cmd_reply, "reply on the original thread",
+        Cmd("reply", cmd_reply, "reply to the sender, on the original thread",
+            (arg("id"), arg("--body", required=True))),
+        Cmd("reply-all", cmd_reply_all,
+            "reply to every participant, on the original thread",
             (arg("id"), arg("--body", required=True))),
         Cmd("forward", cmd_forward, "forward a message",
             (arg("id"), arg("--to", required=True), arg("--body", default=""))),

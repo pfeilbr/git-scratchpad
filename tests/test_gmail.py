@@ -622,3 +622,137 @@ def test_ordinary_message_ids_are_unchanged(gmail):
     ft.add("POST", "messages/19ab3f/trash", {"id": "19ab3f"})
     run("gmail", "trash", "19ab3f")
     assert ft.calls[0]["url"].endswith("/users/me/messages/19ab3f/trash")
+
+
+# -- triage and reply-all (gws's `+triage` / `+reply-all`) -------------------
+
+def test_triage_lists_unread_inbox_mail(gmail):
+    ft, run = gmail
+    ft.add("GET", "messages?", {"messages": [{"id": "m1"}, {"id": "m2"}]})
+    ft.add("GET", "messages/m1",
+           meta("m1", {"From": "alice@x.com", "Subject": "Q1 roadmap",
+                       "Date": "Mon, 5 Jan 2026 09:14:00 +0000"}))
+    ft.add("GET", "messages/m2",
+           meta("m2", {"From": "bob@x.com", "Subject": "Ping",
+                       "Date": "Tue, 6 Jan 2026 09:14:00 +0000"}))
+    out = run("gmail", "triage")
+    assert "q=is%3Aunread+in%3Ainbox" in ft.calls[0]["url"]
+    assert "FROM" in out and "SUBJECT" in out and "DATE" in out
+    assert "alice@x.com" in out and "Q1 roadmap" in out
+    assert "bob@x.com" in out and "Ping" in out
+    # The id leads: triage exists to hand the next command something to act on.
+    assert "m1" in out and "m2" in out
+
+
+def test_triage_is_a_listing_that_honours_max_and_json(gmail):
+    ft, run = gmail
+    ft.add("GET", "messages?", {"messages": [{"id": "m1"}, {"id": "m2"}]})
+    ft.add("GET", "messages/m1",
+           meta("m1", {"From": "alice@x.com", "Subject": "Q1 roadmap",
+                       "Date": "Mon, 5 Jan 2026 09:14:00 +0000"}))
+    out = run("--json", "gmail", "triage", "--max", "1")
+    # --max stops the walk: the second id is never fetched.
+    assert [c["url"].rsplit("/", 1)[-1] for c in ft.calls[1:]] == [
+        "m1?format=metadata&metadataHeaders=From&metadataHeaders=To"
+        "&metadataHeaders=Cc&metadataHeaders=Reply-To"
+        "&metadataHeaders=Subject&metadataHeaders=Date"
+        "&metadataHeaders=Message-ID"]
+    assert json.loads(out) == [{"id": "m1", "from": "alice@x.com",
+                                "subject": "Q1 roadmap",
+                                "date": "Mon, 5 Jan 2026 09:14:00 +0000",
+                                "snippet": ""}]
+
+
+def test_reply_all_answers_every_participant_except_me(gmail):
+    ft, run = gmail
+    ft.add("GET", "messages/m1", meta("m1", {
+        "From": "Alice <alice@x.com>",
+        "To": "a@x.com, Bob <bob@x.com>",
+        "Cc": "carol@x.com, A@X.com",
+        "Subject": "Q",
+        "Message-ID": "<orig@x>",
+    }))
+    ft.add("POST", "messages/send", {"id": "sentall"})
+    out = run("gmail", "reply-all", "m1", "--body", "answer")
+    payload, mime = sent_mime(ft)
+    assert payload["threadId"] == "t1"
+    # Sender first, then the other To recipients; display names survive.
+    assert mime["To"] == "Alice <alice@x.com>, Bob <bob@x.com>"
+    # The acting account drops out of both lists, whatever its case.
+    assert mime["Cc"] == "carol@x.com"
+    assert mime["Subject"] == "Re: Q"
+    assert mime["In-Reply-To"] == "<orig@x>"
+    assert "answer" in mime.get_payload()
+    assert "sentall" in out
+
+
+def test_reply_all_does_not_send_anyone_two_copies(gmail):
+    """The sender is usually on the To line too; they get one copy, not two."""
+    ft, run = gmail
+    ft.add("GET", "messages/m1", meta("m1", {"From": "alice@x.com",
+                                             "To": "alice@x.com, bob@x.com",
+                                             "Cc": "bob@x.com",
+                                             "Subject": "Q"}))
+    ft.add("POST", "messages/send", {"id": "sentd"})
+    run("gmail", "reply-all", "m1", "--body", "answer")
+    _, mime = sent_mime(ft)
+    assert mime["To"] == "alice@x.com, bob@x.com"
+    assert mime["Cc"] is None
+
+
+def test_reply_all_prefers_reply_to_over_the_sender(gmail):
+    ft, run = gmail
+    ft.add("GET", "messages/m1", meta("m1", {"From": "alice@x.com",
+                                             "Reply-To": "list@x.com",
+                                             "To": "bob@x.com",
+                                             "Subject": "Q"}))
+    ft.add("POST", "messages/send", {"id": "sentr"})
+    run("gmail", "reply-all", "m1", "--body", "answer")
+    _, mime = sent_mime(ft)
+    assert mime["To"] == "list@x.com, bob@x.com"
+
+
+def test_reply_all_errors_when_every_participant_is_me(gmail):
+    ft, run = gmail
+    ft.add("GET", "messages/m1", meta("m1", {"From": "a@x.com",
+                                             "To": "a@x.com",
+                                             "Subject": "note to self"}))
+    run("gmail", "reply-all", "m1", "--body", "answer", expect=1)
+    assert [c["method"] for c in ft.calls] == ["GET"]  # nothing sent
+
+
+@pytest.mark.parametrize("header", ["To", "Cc", "From"])
+def test_reply_all_refuses_a_line_break_in_a_fetched_recipient_header(gmail,
+                                                                      header):
+    """Recipient headers come off received mail, so they are hostile input.
+
+    `getaddresses` cannot be the guard: depending on the Python patch level
+    it either hands the smuggled header back as one more address or drops
+    every recipient silently, and neither is an answer a user can act on.
+    """
+    ft, run = gmail
+    headers = {"From": "alice@x.com", "To": "bob@x.com", "Subject": "Q"}
+    headers[header] = "victim@x.com\r\nBcc: evil@example.com"
+    ft.add("GET", "messages/m1", meta("m1", headers))
+    ft.add("POST", "messages/send", {"id": "nope"})
+    run("gmail", "reply-all", "m1", "--body", "answer", expect=1)
+    assert [c["method"] for c in ft.calls] == ["GET"]
+
+
+def test_reply_requests_the_headers_it_reads(gmail):
+    """Regression: `reply` preferred Reply-To but never asked Gmail for it.
+
+    `format=metadata` returns *only* the headers named in metadataHeaders, so
+    one left off that list reads as absent on every real message — which is
+    how the Reply-To branch came to be dead code against the live API.
+    """
+    ft, run = gmail
+    ft.add("GET", "messages/m1", meta("m1", {"From": "alice@x.com",
+                                             "Reply-To": "list@x.com",
+                                             "Subject": "Q"}))
+    ft.add("POST", "messages/send", {"id": "sentrt"})
+    run("gmail", "reply", "m1", "--body", "answer")
+    url = ft.calls[0]["url"]
+    assert "metadataHeaders=Reply-To" in url and "metadataHeaders=Cc" in url
+    _, mime = sent_mime(ft)
+    assert mime["To"] == "list@x.com"
