@@ -221,6 +221,203 @@ usage: gsuite drive drives [-h] [--max MAX]
 | --- | --- | --- | --- |
 | `--max MAX` |  | `50` | maximum results (default: 50) |
 
+### `gsuite drive comments`
+
+Read and write comments on a file.
+
+#### `gsuite drive comments list`
+
+List comments on a file.
+
+```text
+usage: gsuite drive comments list [-h] [--include-deleted] [--max MAX] file
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `file` | yes |  |  |
+| `--include-deleted` |  |  | include deleted comments |
+| `--max MAX` |  | `50` | maximum results (default: 50) |
+
+#### `gsuite drive comments get`
+
+Show one comment (--json for the reply text).
+
+```text
+usage: gsuite drive comments get [-h] file comment
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `file` | yes |  |  |
+| `comment` | yes |  |  |
+
+#### `gsuite drive comments create`
+
+Comment on a file.
+
+```text
+usage: gsuite drive comments create [-h] --content CONTENT [--quote TEXT] file
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `file` | yes |  |  |
+| `--content CONTENT` | yes |  |  |
+| `--quote TEXT` |  |  | passage in the file the comment is about |
+
+#### `gsuite drive comments update`
+
+Edit a comment's text.
+
+```text
+usage: gsuite drive comments update [-h] --content CONTENT file comment
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `file` | yes |  |  |
+| `comment` | yes |  |  |
+| `--content CONTENT` | yes |  |  |
+
+#### `gsuite drive comments delete`
+
+Delete a comment.
+
+```text
+usage: gsuite drive comments delete [-h] file comment
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `file` | yes |  |  |
+| `comment` | yes |  |  |
+
+#### `gsuite drive comments reply`
+
+Reply to a comment.
+
+```text
+usage: gsuite drive comments reply [-h] --content CONTENT file comment
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `file` | yes |  |  |
+| `comment` | yes |  |  |
+| `--content CONTENT` | yes |  |  |
+
+#### `gsuite drive comments resolve`
+
+Mark a comment resolved.
+
+```text
+usage: gsuite drive comments resolve [-h] [--content CONTENT] file comment
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `file` | yes |  |  |
+| `comment` | yes |  |  |
+| `--content CONTENT` |  |  | text to reply with as you resolve |
+
+#### `gsuite drive comments reopen`
+
+Reopen a resolved comment.
+
+```text
+usage: gsuite drive comments reopen [-h] [--content CONTENT] file comment
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `file` | yes |  |  |
+| `comment` | yes |  |  |
+| `--content CONTENT` |  |  | text to reply with as you reopen |
+
+### `gsuite drive revisions`
+
+A file's version history.
+
+#### `gsuite drive revisions list`
+
+List a file's revisions.
+
+```text
+usage: gsuite drive revisions list [-h] [--max MAX] file
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `file` | yes |  |  |
+| `--max MAX` |  | `50` | maximum results (default: 50) |
+
+#### `gsuite drive revisions get`
+
+Show one revision.
+
+```text
+usage: gsuite drive revisions get [-h] file revision
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `file` | yes |  |  |
+| `revision` | yes |  |  |
+
+### `gsuite drive rename`
+
+Rename a file or folder.
+
+```text
+usage: gsuite drive rename [-h] id name
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+| `name` | yes |  | the new name |
+
+### `gsuite drive url`
+
+Print the web URL of one or more files (no API call).
+
+```text
+usage: gsuite drive url [-h] ID [ID ...]
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `ID` | yes |  |  |
+
+### `gsuite drive unshare`
+
+Revoke access to a file.
+
+```text
+usage: gsuite drive unshare [-h] [--with EMAIL|anyone] [--permission ID] id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+| `--with EMAIL|anyone` |  |  | the grantee whose access to revoke |
+| `--permission ID` |  |  | the permission id, if you already know it |
+
+### `gsuite drive shortcut`
+
+Create a shortcut to a file.
+
+```text
+usage: gsuite drive shortcut [-h] [--name NAME] [--parent PARENT] target
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `target` | yes |  | id of the file to point at |
+| `--name NAME` |  |  | shortcut name (default: the target's) |
+| `--parent PARENT` |  |  | folder to create the shortcut in |
+
 ## Examples
 
 **List a folder and upload into it**
@@ -244,4 +441,14 @@ wrote 24576 bytes to notes.pdf
 $ gsuite drive audit
 ID     NAME        TYPE       MODIFIED              SIZE  LINK
 1XyZ9  budget.xlsx submitted  2026-01-04T12:00:00Z  9812  https://…
+```
+
+**Work through a document's comments**
+
+```console
+$ gsuite drive comments list 1DocId
+$ gsuite drive comments resolve 1DocId c1 --content 'Fixed in v3.'
+ID  AUTHOR  CREATED               RESOLVED  REPLIES  CONTENT
+c1  Ada     2026-03-01T00:00:00Z  False     0        Cite a source?
+resolved c1
 ```
