@@ -23,6 +23,18 @@ usage: gsuite gmail search [-h] [--max MAX] query
 | `query` | yes |  |  |
 | `--max MAX` |  | `20` | maximum results (default: 20) |
 
+### `gsuite gmail triage`
+
+Summarize unread inbox mail.
+
+```text
+usage: gsuite gmail triage [-h] [--max MAX]
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--max MAX` |  | `20` | maximum results (default: 20) |
+
 ### `gsuite gmail get`
 
 Read a message (plain-text body).
@@ -80,10 +92,23 @@ usage: gsuite gmail send [-h] --to TO [--subject SUBJECT] [--body BODY]
 
 ### `gsuite gmail reply`
 
-Reply on the original thread.
+Reply to the sender, on the original thread.
 
 ```text
 usage: gsuite gmail reply [-h] --body BODY id
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `id` | yes |  |  |
+| `--body BODY` | yes |  |  |
+
+### `gsuite gmail reply-all`
+
+Reply to every participant, on the original thread.
+
+```text
+usage: gsuite gmail reply-all [-h] --body BODY id
 ```
 
 | Argument | Required | Default | Description |
@@ -356,6 +381,217 @@ usage: gsuite gmail filters rm [-h] id
 | --- | --- | --- | --- |
 | `id` | yes |  |  |
 
+### `gsuite gmail settings`
+
+Mailbox settings: send-as, delegates, forwarding.
+
+#### `gsuite gmail settings sendas`
+
+Send-as addresses.
+
+##### `gsuite gmail settings sendas list`
+
+List send-as addresses.
+
+```text
+usage: gsuite gmail settings sendas list [-h]
+```
+
+##### `gsuite gmail settings sendas get`
+
+Show one send-as address.
+
+```text
+usage: gsuite gmail settings sendas get [-h] email
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `email` | yes |  |  |
+
+##### `gsuite gmail settings sendas create`
+
+Add a send-as address.
+
+```text
+usage: gsuite gmail settings sendas create [-h] [--name DISPLAY]
+                                           [--reply-to EMAIL]
+                                           [--treat-as-alias]
+                                           email
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `email` | yes |  |  |
+| `--name DISPLAY` |  |  | display name on outgoing mail |
+| `--reply-to EMAIL` |  |  | address replies should go to |
+| `--treat-as-alias` |  |  | treat mail to this address as mail to you |
+
+##### `gsuite gmail settings sendas update`
+
+Change a send-as address.
+
+```text
+usage: gsuite gmail settings sendas update [-h] [--name DISPLAY]
+                                           [--reply-to EMAIL] [--default]
+                                           email
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `email` | yes |  |  |
+| `--name DISPLAY` |  |  | display name on outgoing mail |
+| `--reply-to EMAIL` |  |  | address replies should go to |
+| `--default` |  |  | send new mail from this address by default |
+
+##### `gsuite gmail settings sendas delete`
+
+Remove a send-as address.
+
+```text
+usage: gsuite gmail settings sendas delete [-h] email
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `email` | yes |  |  |
+
+##### `gsuite gmail settings sendas verify`
+
+Send the ownership confirmation mail again.
+
+```text
+usage: gsuite gmail settings sendas verify [-h] email
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `email` | yes |  |  |
+
+#### `gsuite gmail settings delegates`
+
+People who may read and send as this mailbox.
+
+##### `gsuite gmail settings delegates list`
+
+List delegates.
+
+```text
+usage: gsuite gmail settings delegates list [-h]
+```
+
+##### `gsuite gmail settings delegates get`
+
+Show one delegate.
+
+```text
+usage: gsuite gmail settings delegates get [-h] email
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `email` | yes |  |  |
+
+##### `gsuite gmail settings delegates add`
+
+Grant delegate access.
+
+```text
+usage: gsuite gmail settings delegates add [-h] email
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `email` | yes |  |  |
+
+##### `gsuite gmail settings delegates remove`
+
+Revoke delegate access.
+
+```text
+usage: gsuite gmail settings delegates remove [-h] email
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `email` | yes |  |  |
+
+#### `gsuite gmail settings forwarding`
+
+Addresses this mailbox may forward to.
+
+##### `gsuite gmail settings forwarding list`
+
+List forwarding addresses.
+
+```text
+usage: gsuite gmail settings forwarding list [-h]
+```
+
+##### `gsuite gmail settings forwarding get`
+
+Show one forwarding address.
+
+```text
+usage: gsuite gmail settings forwarding get [-h] email
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `email` | yes |  |  |
+
+##### `gsuite gmail settings forwarding create`
+
+Add a forwarding address.
+
+```text
+usage: gsuite gmail settings forwarding create [-h] email
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `email` | yes |  |  |
+
+##### `gsuite gmail settings forwarding delete`
+
+Remove a forwarding address.
+
+```text
+usage: gsuite gmail settings forwarding delete [-h] email
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `email` | yes |  |  |
+
+#### `gsuite gmail settings autoforward`
+
+Forward incoming mail automatically.
+
+##### `gsuite gmail settings autoforward get`
+
+Show the auto-forwarding rule.
+
+```text
+usage: gsuite gmail settings autoforward get [-h]
+```
+
+##### `gsuite gmail settings autoforward update`
+
+Set the auto-forwarding rule.
+
+```text
+usage: gsuite gmail settings autoforward update [-h] [--to EMAIL]
+                                                [--disposition {leaveInInbox,archive,trash,markRead}]
+                                                [--off]
+```
+
+| Argument | Required | Default | Description |
+| --- | --- | --- | --- |
+| `--to EMAIL` |  |  | forward to this address (it must already be verified: `gsuite gmail settings forwarding list`) |
+| `--disposition {leaveInInbox,archive,trash,markRead}` |  | `leaveInInbox` | what to do with the original copy |
+| `--off` |  |  | stop forwarding incoming mail |
+
 ### `gsuite gmail batch-modify`
 
 Add/remove a label across all query matches.
@@ -389,10 +625,20 @@ $ gsuite gmail send --to bob@example.com --subject "Lunch?" --body "12:30 at the
 sent 19ab41
 ```
 
+**Triage the unread inbox**
+
+```console
+$ gsuite gmail triage --max 3
+ID      FROM               SUBJECT        DATE
+19ab3f  alice@example.com  Q1 roadmap     Mon, 5 Jan 2026 09:14
+19ab40  ci@example.com     Build #412 ok  Mon, 5 Jan 2026 08:02
+```
+
 **Reply within the original thread**
 
 ```console
 $ gsuite gmail reply 19ab3f --body "Sounds good — shipping Friday."
+$ gsuite gmail reply-all 19ab3f --body "Looping in the whole thread."
 sent 19ab42
 ```
 
@@ -402,4 +648,12 @@ sent 19ab42
 $ gsuite gmail labels create follow-up
 $ gsuite gmail labels apply 19ab3f follow-up
 applied follow-up to 19ab3f
+```
+
+**Forward incoming mail to an address that has confirmed itself**
+
+```console
+$ gsuite gmail settings forwarding list
+$ gsuite gmail settings autoforward update --to ops@example.com --disposition archive
+auto-forwarding to ops@example.com (archive)
 ```
