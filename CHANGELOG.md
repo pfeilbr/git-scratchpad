@@ -9,12 +9,12 @@ Notable changes to `gsuite-cli`. Format loosely follows
 First release. One command-line tool for Google Workspace, drawing its
 command surface from Google's [`gws`](https://github.com/googleworkspace/cli)
 and steipete's [`gog`](https://github.com/openclaw/gogcli) and keeping the
-latter's one-command login. **18 services, 149 commands, zero runtime
+latter's one-command login. **19 services, 185 commands, zero runtime
 dependencies** (Python ≥ 3.10 standard library only).
 
 Coverage against those two is measured, not claimed: `scripts/parity.py`
 compares this CLI's parser tree with both projects' own published command
-lists. At this release that is 10 of gws's 19 in-scope helper verbs and 97 of
+lists. At this release that is 10 of gws's 19 in-scope helper verbs and 133 of
 gog's 545 — the daily-driver commands, not the long tail. The gap is listed
 per command in `parity/`, and CI fails if it widens.
 
@@ -31,6 +31,9 @@ per command in `parity/`, and CI fails if it widens.
   `chat` (spaces, members, threaded replies), `keep` (notes and sharing),
   `meet` (spaces, conference records, participants), `forms`.
 - **Administration** — `admin` (Directory users, groups, org units).
+- **Teaching** — `classroom` (courses, student and teacher rosters,
+  coursework, student submissions with grading and return,
+  announcements, topics).
 - **Reporting** — `searchconsole` (sites, search analytics, URL inspection),
   `analytics` (GA4 properties, reports, realtime).
 - **Escape hatches** — `api` (authorized call to any Google API, plus

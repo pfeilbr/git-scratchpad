@@ -2,9 +2,10 @@
 
 One command-line tool for all of Google Workspace — `gmail`, `calendar`,
 `drive`, `docs`, `sheets`, `slides`, `contacts`, `tasks`, `chat`, `keep`,
-`forms`, `meet`, and Workspace `admin` — plus read-only `searchconsole` and
-`analytics` reporting, `auth`, a raw `api` passthrough to **any** Google API
-via the Discovery service, and `completion` for shell tab-completion.
+`forms`, `meet`, `classroom`, and Workspace `admin` — plus read-only
+`searchconsole` and `analytics` reporting, `auth`, a raw `api` passthrough
+to **any** Google API via the Discovery service, and `completion` for shell
+tab-completion.
 
 It merges the command surfaces of two existing tools and keeps the best
 property of each:

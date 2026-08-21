@@ -15,7 +15,7 @@ flowchart TD
         GM[gmail] --- CA[calendar] --- DR[drive] --- DO[docs] --- SH[sheets]
         SL[slides] --- CO[contacts] --- TA[tasks] --- CH[chat] --- KE[keep]
         AD[admin] --- FO[forms] --- ME[meet] --- SC[searchconsole]
-        AN[analytics] --- AP[api] --- CP[completion]
+        AN[analytics] --- CR[classroom] --- AP[api] --- CP[completion]
     end
 
     CLI --> SVC

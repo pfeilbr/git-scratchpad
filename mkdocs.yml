@@ -52,6 +52,7 @@ nav:
       - meet: reference/meet.md
       - searchconsole: reference/searchconsole.md
       - analytics: reference/analytics.md
+      - classroom: reference/classroom.md
       - api: reference/api.md
       - completion: reference/completion.md
   - Development: development.md

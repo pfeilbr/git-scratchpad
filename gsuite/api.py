@@ -41,6 +41,7 @@ SERVICE_BY_HOST = {
     "searchconsole.googleapis.com": "searchconsole",
     "analyticsdata.googleapis.com": "analytics",
     "analyticsadmin.googleapis.com": "analytics",
+    "classroom.googleapis.com": "classroom",
     "www.googleapis.com/drive": "drive",
     "www.googleapis.com/upload/drive": "drive",
     "www.googleapis.com/calendar": "calendar",

@@ -185,6 +185,27 @@ EXAMPLES: dict[str, list[tuple[str, str, str]]] = {
          "COUNTRY  ACTIVEUSERS\n"
          "Japan    5"),
     ],
+    "classroom": [
+        ("What am I teaching, and who is in it?",
+         "gsuite classroom courses list --teacher me\n"
+         "gsuite classroom students list 123",
+         "ID   NAME       SECTION  STATE\n"
+         "123  Math 101   P1       ACTIVE"),
+        ("Set an assignment, then see what came in",
+         "gsuite classroom coursework create 123 --title 'Problem set 1' "
+         "--due 2026-05-04 --points 100\n"
+         "gsuite classroom submissions list 123 --coursework cw1",
+         "ID    COURSEWORK  USER  STATE      GRADE  LATE\n"
+         "sub1  cw1         s1    TURNED_IN  90     yes"),
+        ("Grade a submission and hand it back",
+         "gsuite classroom submissions grade 123 cw1 sub1 --grade 90\n"
+         "gsuite classroom submissions return 123 cw1 sub1",
+         "returned sub1"),
+        ("Courses answer to their alias as well as their id",
+         "gsuite classroom announcements create d:school_math_101 "
+         "--text 'No class Friday'",
+         "created an1"),
+    ],
     "api": [
         ("Call any endpoint (no dedicated command needed)",
          "gsuite api call GET drive/v3/about --param fields=user",

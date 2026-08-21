@@ -53,6 +53,18 @@ SERVICE_SCOPES: dict[str, list[str]] = {
     ],
     "searchconsole": ["https://www.googleapis.com/auth/webmasters.readonly"],
     "analytics": ["https://www.googleapis.com/auth/analytics.readonly"],
+    # `profile.emails` is not optional dressing: without it a roster
+    # listing comes back as bare user ids, and `students list` prints a
+    # table of numbers nobody can act on.
+    "classroom": [
+        "https://www.googleapis.com/auth/classroom.announcements",
+        "https://www.googleapis.com/auth/classroom.courses",
+        "https://www.googleapis.com/auth/classroom.coursework.me",
+        "https://www.googleapis.com/auth/classroom.coursework.students",
+        "https://www.googleapis.com/auth/classroom.profile.emails",
+        "https://www.googleapis.com/auth/classroom.rosters",
+        "https://www.googleapis.com/auth/classroom.topics",
+    ],
 }
 IDENTITY_SCOPES = ["https://www.googleapis.com/auth/userinfo.email"]
 DEFAULT_SERVICES = ["gmail", "calendar", "drive", "contacts"]

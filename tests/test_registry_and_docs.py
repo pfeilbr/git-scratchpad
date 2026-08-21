@@ -7,8 +7,8 @@ from gsuite.cli import SERVICE_MODULES, main
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXPECTED_SERVICES = ["auth", "gmail", "calendar", "drive", "docs", "sheets",
                      "slides", "contacts", "tasks", "chat", "keep", "admin",
-                     "forms", "meet", "searchconsole", "analytics", "api",
-                     "completion"]
+                     "forms", "meet", "searchconsole", "analytics",
+                     "classroom", "api", "completion"]
 
 
 def test_all_expected_services_registered():
