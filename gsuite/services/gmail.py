@@ -3,6 +3,7 @@ reply-all, forward, labels, drafts, trash, settings (vacation, signature,
 filters, send-as, delegates, forwarding), batch label edits."""
 from __future__ import annotations
 
+import argparse
 import base64
 import json
 import mimetypes
@@ -12,12 +13,15 @@ from email.utils import formataddr, getaddresses
 from typing import Sequence
 
 from gsuite.api import Client, quote_id
-from gsuite.cmdreg import Cmd, Group, arg, max_flag, register_service
+from gsuite.cmdreg import Cmd, Group, _add_cmd, arg, max_flag, register_service
 from gsuite.errors import CLIError
 from gsuite.output import confirm, emit, emit_obj
 from gsuite.services._common import make_dir, read_file, write_file
 
 BASE = "https://gmail.googleapis.com/gmail/v1/users/me"
+
+# The settings collections, named once because several commands share each.
+SENDAS = f"{BASE}/settings/sendAs"
 
 COMPOSE_ARGS = (arg("--to", required=True), arg("--subject", default=""),
                 arg("--body", default=""), arg("--cc"), arg("--bcc"),
@@ -445,7 +449,7 @@ def cmd_vacation_off(args) -> int:
 
 def _send_as_entry(client: Client, email: str | None) -> dict:
     """The send-as entry for `email`, or the primary one when no email given."""
-    entries = client.get(f"{BASE}/settings/sendAs").get("sendAs", [])
+    entries = client.get(SENDAS).get("sendAs", [])
     for entry in entries:
         wanted = (entry.get("sendAsEmail") == email if email
                   else entry.get("isPrimary"))
@@ -464,9 +468,91 @@ def cmd_signature_show(args) -> int:
 def cmd_signature_set(args) -> int:
     client = Client.for_args(args)
     email = _send_as_entry(client, args.send_as)["sendAsEmail"]
-    client.patch(f"{BASE}/settings/sendAs/{quote_id(email)}",
+    client.patch(f"{SENDAS}/{quote_id(email)}",
                  json_body={"signature": args.html})
     confirm("signature updated for", email)
+    return 0
+
+
+# -- settings: send-as addresses --------------------------------------------
+#
+# Signatures are deliberately absent from `create` and `update`: `gmail
+# signature set` already writes that field, and two commands writing one
+# field is how the two of them drift apart. `get` still shows the signature,
+# because showing is not owning.
+
+def cmd_sendas_list(args) -> int:
+    entries = Client.for_args(args).get(SENDAS).get("sendAs", [])
+    emit(args, entries, [
+        ("EMAIL", "sendAsEmail"),
+        ("NAME", "displayName"),
+        ("PRIMARY", lambda e: "yes" if e.get("isPrimary") else ""),
+        ("DEFAULT", lambda e: "yes" if e.get("isDefault") else ""),
+        # Blank for the primary address, which needs no verifying.
+        ("VERIFIED", "verificationStatus"),
+    ])
+    return 0
+
+
+def cmd_sendas_get(args) -> int:
+    entry = Client.for_args(args).get(f"{SENDAS}/{quote_id(args.email)}")
+    emit_obj(args, {
+        "email": entry.get("sendAsEmail", ""),
+        "name": entry.get("displayName", ""),
+        "reply-to": entry.get("replyToAddress", ""),
+        "primary": entry.get("isPrimary", False),
+        "default": entry.get("isDefault", False),
+        "verified": entry.get("verificationStatus", ""),
+        "alias": entry.get("treatAsAlias", False),
+        "signature": entry.get("signature", ""),
+    })
+    return 0
+
+
+def cmd_sendas_create(args) -> int:
+    body = {"sendAsEmail": args.email}
+    if args.name:
+        body["displayName"] = args.name
+    if args.reply_to:
+        body["replyToAddress"] = args.reply_to
+    if args.treat_as_alias:
+        body["treatAsAlias"] = True
+    created = Client.for_args(args).post(SENDAS, json_body=body)
+    # Any address that is not already yours gets a confirmation mail, and
+    # cannot send until someone follows the link — so say which it was.
+    confirm("created", created.get("sendAsEmail", args.email),
+            created.get("verificationStatus", ""))
+    return 0
+
+
+def cmd_sendas_update(args) -> int:
+    body: dict = {}
+    # `is not None`, not truthiness: `--name ""` asks for the display name to
+    # be cleared, which is a change, while omitting --name asks for nothing.
+    if args.name is not None:
+        body["displayName"] = args.name
+    if args.reply_to is not None:
+        body["replyToAddress"] = args.reply_to
+    if args.default:
+        body["isDefault"] = True
+    if not body:
+        raise CLIError("give at least one field to change: "
+                       "--name, --reply-to or --default")
+    updated = Client.for_args(args).patch(f"{SENDAS}/{quote_id(args.email)}",
+                                          json_body=body)
+    confirm("updated", updated.get("sendAsEmail", args.email))
+    return 0
+
+
+def cmd_sendas_delete(args) -> int:
+    Client.for_args(args).delete(f"{SENDAS}/{quote_id(args.email)}")
+    confirm("deleted send-as", args.email)
+    return 0
+
+
+def cmd_sendas_verify(args) -> int:
+    Client.for_args(args).post(f"{SENDAS}/{quote_id(args.email)}/verify")
+    confirm("verification email sent to", args.email)
     return 0
 
 
@@ -528,8 +614,66 @@ def cmd_batch_modify(args) -> int:
     return 0
 
 
+def _sub_action(parser) -> argparse._SubParsersAction:
+    """The subcommand action argparse hung on `parser`."""
+    return next(a for a in parser._actions
+                if isinstance(a, argparse._SubParsersAction))
+
+
+def _add_nested(group_sub, group: Group) -> None:
+    """Attach a Group *inside* a group — a third level of commands.
+
+    `register_service` nests exactly one level: a service holds Groups and a
+    Group holds Cmds, and handing it a Group inside a Group is an
+    AttributeError. The Gmail settings surface is three deep — `gmail
+    settings sendas list` — because that is how the API names it, how `gog`
+    names it, and how the Gmail UI reads. Flattening it to `settings
+    sendas-list` would put this CLI's only compound verb at exactly the
+    place a user is most likely to guess the name from upstream, so the
+    third level is worth these few lines of argparse.
+
+    cmdreg's own `_add_cmd` builds the leaves rather than a copy of it, so a
+    Cmd keeps meaning here exactly what it means everywhere else.
+    """
+    parser = group_sub.add_parser(group.name, help=group.help)
+    sub = parser.add_subparsers(dest=f"{group.name}_command",
+                                metavar="<command>")
+    for cmd in group.commands:
+        _add_cmd(sub, cmd)
+
+
+# Flags shared by `settings sendas create` and `settings sendas update`.
+# `update` defaults them to None so that an empty value can still be told
+# apart from an absent one; see cmd_sendas_update.
+SENDAS_FIELDS = (arg("--name", metavar="DISPLAY",
+                     help="display name on outgoing mail"),
+                 arg("--reply-to", metavar="EMAIL",
+                     help="address replies should go to"))
+
+SETTINGS_GROUPS = (
+    Group("sendas", "send-as addresses", (
+        Cmd("list", cmd_sendas_list, "list send-as addresses"),
+        Cmd("get", cmd_sendas_get, "show one send-as address",
+            (arg("email"),)),
+        Cmd("create", cmd_sendas_create, "add a send-as address",
+            (arg("email"), *SENDAS_FIELDS,
+             arg("--treat-as-alias", action="store_true",
+                 help="treat mail to this address as mail to you"))),
+        Cmd("update", cmd_sendas_update, "change a send-as address",
+            (arg("email"), *SENDAS_FIELDS,
+             arg("--default", action="store_true",
+                 help="send new mail from this address by default"))),
+        Cmd("delete", cmd_sendas_delete, "remove a send-as address",
+            (arg("email"),)),
+        Cmd("verify", cmd_sendas_verify,
+            "send the ownership confirmation mail again", (arg("email"),)),
+    )),
+)
+
+
 def register(subparsers) -> None:
-    register_service(subparsers, "gmail", "search, read, send, labels, drafts", [
+    gmail = register_service(subparsers, "gmail",
+                             "search, read, send, labels, drafts", [
         Cmd("search", cmd_search, "search messages (Gmail query syntax)",
             (arg("query"), max_flag(20))),
         Cmd("triage", cmd_triage, "summarize unread inbox mail",
@@ -598,9 +742,16 @@ def register(subparsers) -> None:
                           help="send matches to trash"))),
             Cmd("rm", cmd_filters_rm, args=(arg("id"),)),
         )),
+        # Declared empty on purpose: its members are groups themselves, one
+        # level deeper than register_service nests. _add_nested fills it in
+        # below — and explains why the depth is worth having.
+        Group("settings", "mailbox settings: send-as addresses", ()),
         Cmd("batch-modify", cmd_batch_modify,
             "add/remove a label across all query matches",
             (arg("--query", required=True),
              arg("--add-label", metavar="NAME"),
              arg("--remove-label", metavar="NAME"), max_flag(500))),
     ])
+    settings = _sub_action(_sub_action(gmail).choices["settings"])
+    for group in SETTINGS_GROUPS:
+        _add_nested(settings, group)

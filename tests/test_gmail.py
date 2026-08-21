@@ -756,3 +756,124 @@ def test_reply_requests_the_headers_it_reads(gmail):
     assert "metadataHeaders=Reply-To" in url and "metadataHeaders=Cc" in url
     _, mime = sent_mime(ft)
     assert mime["To"] == "list@x.com"
+
+
+# -- settings: send-as addresses (gog's `gmail settings sendas *`) -----------
+
+SENDAS_ENTRIES = {"sendAs": [
+    {"sendAsEmail": "a@x.com", "displayName": "Ada", "isPrimary": True,
+     "isDefault": True, "signature": "primary sig"},
+    {"sendAsEmail": "alias@x.com", "displayName": "Alias",
+     "replyToAddress": "list@x.com", "signature": "<b>alias sig</b>",
+     "verificationStatus": "pending", "treatAsAlias": True},
+]}
+
+
+def test_settings_sendas_list(gmail):
+    ft, run = gmail
+    ft.add("GET", "settings/sendAs", SENDAS_ENTRIES)
+    out = run("gmail", "settings", "sendas", "list")
+    assert ft.calls[0]["url"].endswith("/settings/sendAs")
+    for header in ("EMAIL", "NAME", "PRIMARY", "DEFAULT", "VERIFIED"):
+        assert header in out
+    assert "a@x.com" in out and "Ada" in out and "yes" in out
+    assert "alias@x.com" in out and "pending" in out
+
+
+def test_settings_sendas_get(gmail):
+    ft, run = gmail
+    ft.add("GET", "settings/sendAs/alias%40x.com", SENDAS_ENTRIES["sendAs"][1])
+    out = run("gmail", "settings", "sendas", "get", "alias@x.com")
+    assert "settings/sendAs/alias%40x.com" in ft.calls[0]["url"]
+    assert "email: alias@x.com" in out
+    assert "name: Alias" in out
+    assert "reply-to: list@x.com" in out
+    assert "verified: pending" in out
+    assert "signature: <b>alias sig</b>" in out
+
+
+def test_settings_sendas_create(gmail):
+    ft, run = gmail
+    ft.add("POST", "settings/sendAs", {"sendAsEmail": "new@x.com",
+                                       "verificationStatus": "pending"})
+    out = run("gmail", "settings", "sendas", "create", "new@x.com",
+              "--name", "New", "--reply-to", "list@x.com", "--treat-as-alias")
+    assert ft.calls[-1]["method"] == "POST"
+    assert json.loads(ft.calls[-1]["data"]) == {"sendAsEmail": "new@x.com",
+                                                "displayName": "New",
+                                                "replyToAddress": "list@x.com",
+                                                "treatAsAlias": True}
+    # Google mails a confirmation link, so the status is worth saying out loud.
+    assert "created new@x.com pending" in out
+
+
+def test_settings_sendas_create_sends_only_what_was_asked_for(gmail):
+    ft, run = gmail
+    ft.add("POST", "settings/sendAs", {"sendAsEmail": "new@x.com"})
+    run("gmail", "settings", "sendas", "create", "new@x.com")
+    assert json.loads(ft.calls[-1]["data"]) == {"sendAsEmail": "new@x.com"}
+
+
+def test_settings_sendas_update_patches_only_the_named_fields(gmail):
+    ft, run = gmail
+    ft.add("PATCH", "settings/sendAs/alias%40x.com",
+           {"sendAsEmail": "alias@x.com"})
+    out = run("gmail", "settings", "sendas", "update", "alias@x.com",
+              "--name", "Renamed", "--default")
+    assert ft.calls[-1]["method"] == "PATCH"
+    assert json.loads(ft.calls[-1]["data"]) == {"displayName": "Renamed",
+                                                "isDefault": True}
+    assert "updated alias@x.com" in out
+
+
+def test_settings_sendas_update_can_clear_a_field(gmail):
+    """An empty --name is a request to clear the display name, not a no-op."""
+    ft, run = gmail
+    ft.add("PATCH", "settings/sendAs/alias%40x.com",
+           {"sendAsEmail": "alias@x.com"})
+    run("gmail", "settings", "sendas", "update", "alias@x.com", "--name", "")
+    assert json.loads(ft.calls[-1]["data"]) == {"displayName": ""}
+
+
+def test_settings_sendas_update_requires_a_field(gmail):
+    ft, run = gmail
+    run("gmail", "settings", "sendas", "update", "alias@x.com", expect=1)
+    assert ft.calls == []  # rejected before any HTTP
+
+
+def test_settings_sendas_delete_and_verify(gmail):
+    ft, run = gmail
+    ft.add("DELETE", "settings/sendAs/alias%40x.com", {})
+    out = run("gmail", "settings", "sendas", "delete", "alias@x.com")
+    assert ft.calls[-1]["method"] == "DELETE"
+    assert "deleted send-as alias@x.com" in out
+    ft.add("POST", "settings/sendAs/alias%40x.com/verify", {})
+    out = run("gmail", "settings", "sendas", "verify", "alias@x.com")
+    assert ft.calls[-1]["url"].endswith("/sendAs/alias%40x.com/verify")
+    assert "verification email sent to alias@x.com" in out
+
+
+def test_settings_sendas_addresses_cannot_escape_their_url_segment(gmail):
+    """An address is one opaque segment, even when it is not an address."""
+    ft, run = gmail
+    ft.add("DELETE", "settings/sendAs/", {})
+    run("gmail", "settings", "sendas", "delete", "../../../v1/other")
+    url = ft.calls[0]["url"]
+    assert "/sendAs/../" not in url and "%2F" in url
+
+
+def test_settings_sendas_does_not_take_over_signature_editing(gmail):
+    """`gmail signature set` owns signatures; sendas neither duplicates it…
+
+    Two commands writing the same field is how they drift apart, so the
+    overlap is refused at the parser rather than resolved at runtime.
+    """
+    ft, run = gmail
+    with pytest.raises(SystemExit):  # argparse: unrecognized argument
+        run("gmail", "settings", "sendas", "update", "alias@x.com",
+            "--signature", "<b>x</b>")
+    assert ft.calls == []
+    # …nor hides them: `get` still shows what the signature is.
+    ft.add("GET", "settings/sendAs/alias%40x.com", SENDAS_ENTRIES["sendAs"][1])
+    assert "<b>alias sig</b>" in run("gmail", "settings", "sendas", "get",
+                                     "alias@x.com")
