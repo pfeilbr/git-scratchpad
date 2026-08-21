@@ -67,6 +67,11 @@ EXAMPLES: dict[str, list[tuple[str, str, str]]] = {
          "gsuite gmail labels create follow-up\n"
          "gsuite gmail labels apply 19ab3f follow-up",
          "applied follow-up to 19ab3f"),
+        ("Forward incoming mail to an address that has confirmed itself",
+         "gsuite gmail settings forwarding list\n"
+         "gsuite gmail settings autoforward update --to ops@example.com "
+         "--disposition archive",
+         "auto-forwarding to ops@example.com (archive)"),
     ],
     "calendar": [
         ("Today's agenda",

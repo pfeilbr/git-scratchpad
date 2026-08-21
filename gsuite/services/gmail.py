@@ -22,6 +22,13 @@ BASE = "https://gmail.googleapis.com/gmail/v1/users/me"
 
 # The settings collections, named once because several commands share each.
 SENDAS = f"{BASE}/settings/sendAs"
+DELEGATES = f"{BASE}/settings/delegates"
+FORWARDING = f"{BASE}/settings/forwardingAddresses"
+AUTOFORWARD = f"{BASE}/settings/autoForwarding"
+
+# What Gmail may do with a message once it has been forwarded on. The API's
+# own enum values, verbatim, so its documentation reads as the flag's.
+DISPOSITIONS = ["leaveInInbox", "archive", "trash", "markRead"]
 
 COMPOSE_ARGS = (arg("--to", required=True), arg("--subject", default=""),
                 arg("--body", default=""), arg("--cc"), arg("--bcc"),
@@ -556,6 +563,106 @@ def cmd_sendas_verify(args) -> int:
     return 0
 
 
+# -- settings: delegates, forwarding addresses, auto-forwarding -------------
+#
+# Delegates and forwarding addresses are the same shape — a collection of
+# addresses, each either accepted or waiting on the confirmation mail Google
+# sends — so they share their listing and their single-address view. What
+# differs is only the field the address lives in and the verb that reads
+# right afterwards, which is why those are arguments here.
+
+def _address_list(args, url: str, key: str, field: str) -> int:
+    entries = Client.for_args(args).get(url).get(key, [])
+    emit(args, entries, [("EMAIL", field), ("STATUS", "verificationStatus")])
+    return 0
+
+
+def _address_get(args, url: str, field: str) -> int:
+    entry = Client.for_args(args).get(f"{url}/{quote_id(args.email)}")
+    emit_obj(args, {"email": entry.get(field, ""),
+                    "status": entry.get("verificationStatus", "")})
+    return 0
+
+
+def _address_add(args, url: str, field: str, verb: str) -> int:
+    created = Client.for_args(args).post(url, json_body={field: args.email})
+    # Until the address owner follows Google's confirmation link the entry
+    # exists but does nothing, so the status belongs in the confirmation.
+    confirm(verb, created.get(field, args.email),
+            created.get("verificationStatus", ""))
+    return 0
+
+
+def _address_remove(args, url: str, verb: str) -> int:
+    Client.for_args(args).delete(f"{url}/{quote_id(args.email)}")
+    confirm(verb, args.email)
+    return 0
+
+
+def cmd_delegates_list(args) -> int:
+    return _address_list(args, DELEGATES, "delegates", "delegateEmail")
+
+
+def cmd_delegates_get(args) -> int:
+    return _address_get(args, DELEGATES, "delegateEmail")
+
+
+def cmd_delegates_add(args) -> int:
+    return _address_add(args, DELEGATES, "delegateEmail", "added delegate")
+
+
+def cmd_delegates_remove(args) -> int:
+    return _address_remove(args, DELEGATES, "removed delegate")
+
+
+def cmd_forwarding_list(args) -> int:
+    return _address_list(args, FORWARDING, "forwardingAddresses",
+                         "forwardingEmail")
+
+
+def cmd_forwarding_get(args) -> int:
+    return _address_get(args, FORWARDING, "forwardingEmail")
+
+
+def cmd_forwarding_create(args) -> int:
+    return _address_add(args, FORWARDING, "forwardingEmail", "created")
+
+
+def cmd_forwarding_delete(args) -> int:
+    return _address_remove(args, FORWARDING, "deleted forwarding address")
+
+
+def cmd_autoforward_get(args) -> int:
+    settings = Client.for_args(args).get(AUTOFORWARD)
+    emit_obj(args, {
+        "enabled": settings.get("enabled", False),
+        "to": settings.get("emailAddress", ""),
+        "disposition": settings.get("disposition", ""),
+    })
+    return 0
+
+
+def cmd_autoforward_update(args) -> int:
+    if args.off and args.to:
+        raise CLIError("--off stops forwarding, so it takes no --to")
+    if not args.off and not args.to:
+        raise CLIError("give --to EMAIL to forward to, or --off to stop "
+                       "forwarding")
+    if args.off:
+        Client.for_args(args).put(AUTOFORWARD, json_body={"enabled": False})
+        confirm("auto-forwarding disabled")
+        return 0
+    # Gmail refuses an address that has not confirmed itself, which is why
+    # --to's help names the command that lists the ones that have.
+    Client.for_args(args).put(AUTOFORWARD, json_body={
+        "enabled": True,
+        "emailAddress": args.to,
+        "disposition": args.disposition,
+    })
+    confirm("auto-forwarding to", args.to, f"({args.disposition})")
+    return 0
+
+
 def cmd_filters_list(args) -> int:
     filters = Client.for_args(args).get(f"{BASE}/settings/filters").get("filter", [])
     emit(args, filters, [
@@ -668,6 +775,37 @@ SETTINGS_GROUPS = (
         Cmd("verify", cmd_sendas_verify,
             "send the ownership confirmation mail again", (arg("email"),)),
     )),
+    # Delegation is a Workspace feature: on a consumer account Gmail answers
+    # these four with a 403, which the API layer already explains.
+    Group("delegates", "people who may read and send as this mailbox", (
+        Cmd("list", cmd_delegates_list, "list delegates"),
+        Cmd("get", cmd_delegates_get, "show one delegate", (arg("email"),)),
+        Cmd("add", cmd_delegates_add, "grant delegate access",
+            (arg("email"),)),
+        Cmd("remove", cmd_delegates_remove, "revoke delegate access",
+            (arg("email"),)),
+    )),
+    Group("forwarding", "addresses this mailbox may forward to", (
+        Cmd("list", cmd_forwarding_list, "list forwarding addresses"),
+        Cmd("get", cmd_forwarding_get, "show one forwarding address",
+            (arg("email"),)),
+        Cmd("create", cmd_forwarding_create, "add a forwarding address",
+            (arg("email"),)),
+        Cmd("delete", cmd_forwarding_delete, "remove a forwarding address",
+            (arg("email"),)),
+    )),
+    Group("autoforward", "forward incoming mail automatically", (
+        Cmd("get", cmd_autoforward_get, "show the auto-forwarding rule"),
+        Cmd("update", cmd_autoforward_update, "set the auto-forwarding rule",
+            (arg("--to", metavar="EMAIL",
+                 help="forward to this address (it must already be verified: "
+                      "`gsuite gmail settings forwarding list`)"),
+             arg("--disposition", choices=DISPOSITIONS,
+                 default=DISPOSITIONS[0],
+                 help="what to do with the original copy"),
+             arg("--off", action="store_true",
+                 help="stop forwarding incoming mail"))),
+    )),
 )
 
 
@@ -745,7 +883,8 @@ def register(subparsers) -> None:
         # Declared empty on purpose: its members are groups themselves, one
         # level deeper than register_service nests. _add_nested fills it in
         # below — and explains why the depth is worth having.
-        Group("settings", "mailbox settings: send-as addresses", ()),
+        Group("settings",
+              "mailbox settings: send-as, delegates, forwarding", ()),
         Cmd("batch-modify", cmd_batch_modify,
             "add/remove a label across all query matches",
             (arg("--query", required=True),

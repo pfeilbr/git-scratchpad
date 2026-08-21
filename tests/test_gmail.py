@@ -877,3 +877,137 @@ def test_settings_sendas_does_not_take_over_signature_editing(gmail):
     ft.add("GET", "settings/sendAs/alias%40x.com", SENDAS_ENTRIES["sendAs"][1])
     assert "<b>alias sig</b>" in run("gmail", "settings", "sendas", "get",
                                      "alias@x.com")
+
+
+# -- settings: delegates (gog's `gmail settings delegates *`) ----------------
+
+def test_settings_delegates_list(gmail):
+    ft, run = gmail
+    ft.add("GET", "settings/delegates", {"delegates": [
+        {"delegateEmail": "assistant@x.com", "verificationStatus": "accepted"},
+        {"delegateEmail": "temp@x.com", "verificationStatus": "pending"},
+    ]})
+    out = run("gmail", "settings", "delegates", "list")
+    assert ft.calls[0]["url"].endswith("/settings/delegates")
+    assert "EMAIL" in out and "STATUS" in out
+    assert "assistant@x.com" in out and "accepted" in out
+    assert "temp@x.com" in out and "pending" in out
+
+
+def test_settings_delegates_get(gmail):
+    ft, run = gmail
+    ft.add("GET", "settings/delegates/assistant%40x.com",
+           {"delegateEmail": "assistant@x.com",
+            "verificationStatus": "accepted"})
+    out = run("gmail", "settings", "delegates", "get", "assistant@x.com")
+    assert "settings/delegates/assistant%40x.com" in ft.calls[0]["url"]
+    assert "email: assistant@x.com" in out
+    assert "status: accepted" in out
+
+
+def test_settings_delegates_add_and_remove(gmail):
+    ft, run = gmail
+    ft.add("POST", "settings/delegates",
+           {"delegateEmail": "assistant@x.com",
+            "verificationStatus": "pending"})
+    out = run("gmail", "settings", "delegates", "add", "assistant@x.com")
+    assert json.loads(ft.calls[-1]["data"]) == {
+        "delegateEmail": "assistant@x.com"}
+    assert "added delegate assistant@x.com pending" in out
+    ft.add("DELETE", "settings/delegates/assistant%40x.com", {})
+    out = run("gmail", "settings", "delegates", "remove", "assistant@x.com")
+    assert ft.calls[-1]["method"] == "DELETE"
+    assert "removed delegate assistant@x.com" in out
+
+
+# -- settings: forwarding addresses and auto-forwarding ----------------------
+
+def test_settings_forwarding_list_and_get(gmail):
+    ft, run = gmail
+    ft.add("GET", "settings/forwardingAddresses", {"forwardingAddresses": [
+        {"forwardingEmail": "ops@x.com", "verificationStatus": "accepted"},
+    ]})
+    out = run("gmail", "settings", "forwarding", "list")
+    assert ft.calls[0]["url"].endswith("/settings/forwardingAddresses")
+    assert "EMAIL" in out and "STATUS" in out
+    assert "ops@x.com" in out and "accepted" in out
+    ft.add("GET", "settings/forwardingAddresses/ops%40x.com",
+           {"forwardingEmail": "ops@x.com", "verificationStatus": "accepted"})
+    out = run("gmail", "settings", "forwarding", "get", "ops@x.com")
+    assert "email: ops@x.com" in out and "status: accepted" in out
+
+
+def test_settings_forwarding_create_and_delete(gmail):
+    ft, run = gmail
+    ft.add("POST", "settings/forwardingAddresses",
+           {"forwardingEmail": "ops@x.com", "verificationStatus": "pending"})
+    out = run("gmail", "settings", "forwarding", "create", "ops@x.com")
+    assert json.loads(ft.calls[-1]["data"]) == {"forwardingEmail": "ops@x.com"}
+    assert "created ops@x.com pending" in out
+    ft.add("DELETE", "settings/forwardingAddresses/ops%40x.com", {})
+    out = run("gmail", "settings", "forwarding", "delete", "ops@x.com")
+    assert ft.calls[-1]["method"] == "DELETE"
+    assert "deleted forwarding address ops@x.com" in out
+
+
+def test_settings_autoforward_get(gmail):
+    ft, run = gmail
+    ft.add("GET", "settings/autoForwarding", {"enabled": True,
+                                              "emailAddress": "ops@x.com",
+                                              "disposition": "archive"})
+    out = run("gmail", "settings", "autoforward", "get")
+    assert ft.calls[0]["url"].endswith("/settings/autoForwarding")
+    assert "enabled: True" in out
+    assert "to: ops@x.com" in out
+    assert "disposition: archive" in out
+
+
+def test_settings_autoforward_update_turns_it_on(gmail):
+    ft, run = gmail
+    ft.add("PUT", "settings/autoForwarding", {"enabled": True})
+    out = run("gmail", "settings", "autoforward", "update",
+              "--to", "ops@x.com", "--disposition", "archive")
+    assert ft.calls[-1]["method"] == "PUT"
+    assert json.loads(ft.calls[-1]["data"]) == {"enabled": True,
+                                                "emailAddress": "ops@x.com",
+                                                "disposition": "archive"}
+    assert "auto-forwarding to ops@x.com (archive)" in out
+
+
+def test_settings_autoforward_update_keeps_a_copy_by_default(gmail):
+    """The safe disposition is the default: forwarding never loses the mail."""
+    ft, run = gmail
+    ft.add("PUT", "settings/autoForwarding", {"enabled": True})
+    run("gmail", "settings", "autoforward", "update", "--to", "ops@x.com")
+    assert json.loads(ft.calls[-1]["data"])["disposition"] == "leaveInInbox"
+
+
+def test_settings_autoforward_update_turns_it_off(gmail):
+    ft, run = gmail
+    ft.add("PUT", "settings/autoForwarding", {"enabled": False})
+    out = run("gmail", "settings", "autoforward", "update", "--off")
+    assert json.loads(ft.calls[-1]["data"]) == {"enabled": False}
+    assert "auto-forwarding disabled" in out
+
+
+def test_settings_autoforward_update_needs_to_know_which_way(gmail):
+    """Neither flag is a no-op, and both together contradict each other."""
+    ft, run = gmail
+    run("gmail", "settings", "autoforward", "update", expect=1)
+    run("gmail", "settings", "autoforward", "update", "--off",
+        "--to", "ops@x.com", expect=1)
+    assert ft.calls == []  # both rejected before any HTTP
+
+
+@pytest.mark.parametrize("group, command, method, route", [
+    ("delegates", "remove", "DELETE", "settings/delegates/"),
+    ("forwarding", "delete", "DELETE", "settings/forwardingAddresses/"),
+])
+def test_settings_addresses_cannot_escape_their_url_segment(gmail, group,
+                                                            command, method,
+                                                            route):
+    ft, run = gmail
+    ft.add(method, route, {})
+    run("gmail", "settings", group, command, "../../../v1/other")
+    url = ft.calls[0]["url"]
+    assert "/../" not in url and "%2F" in url
