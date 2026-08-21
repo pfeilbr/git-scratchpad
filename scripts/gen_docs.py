@@ -85,6 +85,12 @@ EXAMPLES: dict[str, list[tuple[str, str, str]]] = {
          "gsuite drive audit",
          "ID     NAME        TYPE       MODIFIED              SIZE  LINK\n"
          "1XyZ9  budget.xlsx submitted  2026-01-04T12:00:00Z  9812  https://…"),
+        ("Work through a document's comments",
+         "gsuite drive comments list 1DocId\n"
+         "gsuite drive comments resolve 1DocId c1 --content 'Fixed in v3.'",
+         "ID  AUTHOR  CREATED               RESOLVED  REPLIES  CONTENT\n"
+         "c1  Ada     2026-03-01T00:00:00Z  False     0        Cite a source?\n"
+         "resolved c1"),
     ],
     "docs": [
         ("Create, append, read back",
