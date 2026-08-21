@@ -336,6 +336,7 @@ def test_update_all_day_start_stays_a_bare_date(cal):
     ("calendar", "agenda", "--date", "2026-13-45"),
     ("calendar", "freebusy", "--from", "tomorrow", "--to", "2026-01-06"),
     ("calendar", "freebusy", "--from", "2026-01-05", "--to", "next week"),
+    ("calendar", "changed", "--since", "yesterday"),
 ])
 def test_unparseable_dates_are_clean_errors(cal, argv):
     """`--date tomorrow` is an ordinary typo, not a crash.
@@ -356,3 +357,512 @@ def test_the_date_error_names_the_value_and_the_format(cal):
     with pytest.raises(CLIError) as exc:
         calendar_svc._day_bounds("tomorrow", ZoneInfo("UTC"))
     assert "tomorrow" in str(exc.value) and "YYYY-MM-DD" in str(exc.value)
+
+
+# -- ids in the URL path -----------------------------------------------------
+#
+# Calendar ids are email addresses and event ids are opaque strings, so both
+# are user data that has to be escaped into a single path segment. `_cal_url`
+# always did; the event id was interpolated raw, so an id containing a slash
+# addressed a different endpoint than the one the command named.
+
+
+@pytest.mark.parametrize("argv, method", [
+    (("calendar", "get", "a/b"), "GET"),
+    (("calendar", "delete", "a/b"), "DELETE"),
+    (("calendar", "update", "a/b", "--summary", "x"), "PATCH"),
+])
+def test_event_id_is_escaped_as_one_path_segment(cal, argv, method):
+    ft, run = cal
+    ft.add(method, "events/a%2Fb", {"id": "a/b"})
+    run(*argv)
+    url = ft.calls[0]["url"]
+    assert "events/a%2Fb" in url
+    assert "events/a/b" not in url
+
+
+def test_respond_escapes_the_event_id(cal):
+    ft, run = cal
+    ft.add("GET", "events/a%2Fb", {"id": "a/b", "attendees": [
+        {"email": "a@x.com", "self": True, "responseStatus": "needsAction"},
+    ]})
+    ft.add("PATCH", "events/a%2Fb", {"id": "a/b"})
+    run("calendar", "respond", "a/b", "--as", "accepted")
+    assert all("events/a%2Fb" in c["url"] for c in ft.calls)
+
+
+# -- search ------------------------------------------------------------------
+
+
+def test_search_passes_the_query_and_the_window(cal):
+    ft, run = cal
+    ft.add("GET", "calendars/primary/events", {"items": [
+        {"id": "e1", "summary": "Standup",
+         "start": {"dateTime": "2026-01-05T09:00:00Z"}},
+    ]})
+    out = run("calendar", "search", "standup", "--from", "2026-01-05",
+              "--to", "2026-01-31", "--tz", "UTC")
+    url = ft.calls[0]["url"]
+    assert "q=standup" in url
+    assert "singleEvents=true" in url
+    assert "timeMin=2026-01-05T00%3A00%3A00Z" in url
+    assert "timeMax=2026-01-31T00%3A00%3A00Z" in url
+    assert "Standup" in out
+
+
+def test_search_without_a_window_sends_no_bounds(cal):
+    ft, run = cal
+    ft.add("GET", "calendars/primary/events", {"items": []})
+    run("calendar", "search", "roadmap")
+    url = ft.calls[0]["url"]
+    assert "q=roadmap" in url
+    assert "timeMin" not in url and "timeMax" not in url
+
+
+def test_search_other_calendar_escapes_the_id(cal):
+    ft, run = cal
+    ft.add("GET", "calendars/team%40group.calendar.google.com/events",
+           {"items": []})
+    run("calendar", "search", "offsite",
+        "--calendar", "team@group.calendar.google.com")
+
+
+# -- move --------------------------------------------------------------------
+
+
+def test_move_posts_to_move_with_the_destination(cal):
+    ft, run = cal
+    ft.add("POST", "events/e1/move", {"id": "e1"})
+    out = run("calendar", "move", "e1",
+              "--to", "team@group.calendar.google.com",
+              "--calendar", "src@group.calendar.google.com")
+    call = ft.calls[0]
+    assert call["method"] == "POST"
+    assert ("calendars/src%40group.calendar.google.com/events/e1/move"
+            in call["url"])
+    # The destination rides in the query string, where urlencode escapes it.
+    assert "destination=team%40group.calendar.google.com" in call["url"]
+    assert "moved" in out and "e1" in out
+
+
+# -- calendars, as opposed to events -----------------------------------------
+#
+# Four commands that are easy to confuse with each other and with `create`.
+# `create-calendar`/`delete-calendar` make and destroy a calendar; `subscribe`/
+# `unsubscribe` only add or drop an existing one from *this* account's list,
+# and leave the calendar itself alone. The endpoints differ accordingly, so
+# these tests pin which collection each one touches.
+
+
+def test_create_calendar_posts_summary_description_and_zone(cal):
+    ft, run = cal
+    ft.add("POST", "calendar/v3/calendars",
+           {"id": "new@group.calendar.google.com", "summary": "Team"})
+    out = run("calendar", "create-calendar", "--summary", "Team",
+              "--description", "Team events", "--tz", "America/New_York")
+    call = ft.calls[0]
+    assert call["method"] == "POST"
+    assert json.loads(call["data"]) == {"summary": "Team",
+                                        "description": "Team events",
+                                        "timeZone": "America/New_York"}
+    assert "created" in out and "new@group.calendar.google.com" in out
+
+
+def test_create_calendar_rejects_an_unknown_timezone(cal):
+    ft, run = cal
+    run("calendar", "create-calendar", "--summary", "Team",
+        "--tz", "Mars/Olympus", expect=1)
+    assert ft.calls == [], "a bad zone must be caught before any request"
+
+
+def test_delete_calendar_targets_the_calendar_itself(cal):
+    ft, run = cal
+    ft.add("DELETE", "calendars/team%40group.calendar.google.com", {})
+    out = run("calendar", "delete-calendar", "team@group.calendar.google.com")
+    call = ft.calls[0]
+    assert call["method"] == "DELETE"
+    # Not the calendar *list* — that would merely unsubscribe.
+    assert "calendarList" not in call["url"]
+    assert "deleted" in out
+
+
+def test_subscribe_adds_the_calendar_to_this_accounts_list(cal):
+    ft, run = cal
+    ft.add("POST", "users/me/calendarList",
+           {"id": "team@x.com", "summary": "Team"})
+    out = run("calendar", "subscribe", "team@x.com", "--color", "5")
+    assert json.loads(ft.calls[0]["data"]) == {"id": "team@x.com",
+                                               "colorId": "5"}
+    assert "subscribed" in out and "team@x.com" in out
+
+
+def test_unsubscribe_only_touches_the_calendar_list(cal):
+    ft, run = cal
+    ft.add("DELETE", "users/me/calendarList/team%40group.calendar.google.com",
+           {})
+    out = run("calendar", "unsubscribe", "team@group.calendar.google.com")
+    call = ft.calls[0]
+    assert call["method"] == "DELETE"
+    assert "calendarList" in call["url"]
+    assert "unsubscribed" in out
+
+
+# -- sharing rules -----------------------------------------------------------
+
+
+def test_acl_list_shows_the_role_and_who_holds_it(cal):
+    ft, run = cal
+    ft.add("GET", "calendars/primary/acl", {"items": [
+        {"id": "user:alice@x.com", "role": "writer",
+         "scope": {"type": "user", "value": "alice@x.com"}},
+        {"id": "default", "role": "freeBusyReader",
+         "scope": {"type": "default"}},
+    ]})
+    out = run("calendar", "acl", "list")
+    assert "writer" in out and "alice@x.com" in out
+    assert "freeBusyReader" in out and "default" in out
+
+
+def test_acl_add_wraps_the_scope_in_its_type(cal):
+    ft, run = cal
+    ft.add("POST", "calendars/primary/acl", {"id": "user:bob@x.com"})
+    out = run("calendar", "acl", "add", "bob@x.com", "--role", "writer")
+    assert json.loads(ft.calls[0]["data"]) == {
+        "role": "writer", "scope": {"type": "user", "value": "bob@x.com"}}
+    assert "writer" in out and "bob@x.com" in out
+
+
+def test_acl_add_domain_scope(cal):
+    ft, run = cal
+    ft.add("POST", "calendars/primary/acl", {"id": "domain:x.com"})
+    run("calendar", "acl", "add", "x.com", "--type", "domain",
+        "--role", "reader")
+    assert json.loads(ft.calls[0]["data"]) == {
+        "role": "reader", "scope": {"type": "domain", "value": "x.com"}}
+
+
+def test_acl_add_default_scope_carries_no_value(cal):
+    ft, run = cal
+    ft.add("POST", "calendars/primary/acl", {"id": "default"})
+    run("calendar", "acl", "add", "--type", "default",
+        "--role", "freeBusyReader")
+    # "default" already means everyone; Google rejects a value beside it.
+    assert json.loads(ft.calls[0]["data"]) == {
+        "role": "freeBusyReader", "scope": {"type": "default"}}
+
+
+def test_acl_add_without_a_scope_is_a_clean_error(cal):
+    ft, run = cal
+    run("calendar", "acl", "add", "--role", "reader", expect=1)
+    assert ft.calls == []
+
+
+def test_acl_remove_escapes_the_rule_id(cal):
+    ft, run = cal
+    # Rule ids embed a colon ("user:alice@x.com"), which is one segment.
+    ft.add("DELETE", "acl/user%3Aalice%40x.com", {})
+    out = run("calendar", "acl", "remove", "user:alice@x.com")
+    assert ft.calls[0]["method"] == "DELETE"
+    assert "removed" in out
+
+
+# -- colors ------------------------------------------------------------------
+
+
+COLORS = {
+    "event": {"11": {"background": "#dc2127", "foreground": "#1d1d1d"},
+              "2": {"background": "#51b749", "foreground": "#1d1d1d"}},
+    "calendar": {"1": {"background": "#ac725e", "foreground": "#1d1d1d"}},
+}
+
+
+def test_colors_lists_both_palettes_with_numeric_ids_in_order(cal):
+    ft, run = cal
+    ft.add("GET", "calendar/v3/colors", COLORS)
+    out = run("calendar", "colors")
+    lines = out.splitlines()
+    assert lines[0].split() == ["KIND", "ID", "BACKGROUND", "FOREGROUND"]
+    rows = [line.split() for line in lines[1:]]
+    assert [r[0] for r in rows] == ["calendar", "event", "event"]
+    # ids are numeric strings, so 11 must sort after 2, not after 1.
+    assert [r[1] for r in rows] == ["1", "2", "11"]
+    assert rows[0][2] == "#ac725e"
+
+
+def test_colors_can_be_narrowed_to_one_kind(cal):
+    ft, run = cal
+    ft.add("GET", "calendar/v3/colors", COLORS)
+    out = run("calendar", "colors", "--kind", "event")
+    assert not [l for l in out.splitlines() if l.startswith("calendar")]
+    assert len([l for l in out.splitlines() if l.startswith("event")]) == 2
+
+
+# -- recently changed --------------------------------------------------------
+
+
+def test_changed_asks_for_deletions_ordered_by_update_time(cal):
+    ft, run = cal
+    ft.add("GET", "calendars/primary/events", {"items": [
+        {"id": "e1", "summary": "Standup", "status": "confirmed",
+         "updated": "2026-01-06T08:00:00Z",
+         "start": {"dateTime": "2026-01-07T09:00:00Z"}},
+        {"id": "e2", "summary": "Dropped", "status": "cancelled",
+         "updated": "2026-01-06T09:00:00Z"},
+    ]})
+    out = run("calendar", "changed", "--since", "2026-01-05", "--tz", "UTC")
+    url = ft.calls[0]["url"]
+    assert "showDeleted=true" in url
+    assert "orderBy=updated" in url
+    assert "updatedMin=2026-01-05T00%3A00%3A00Z" in url
+    # Expanding recurrences would hide the cancelled parent records, which
+    # are exactly what "what changed" is being asked for.
+    assert "singleEvents" not in url
+    assert "cancelled" in out and "e2" in out
+    assert "Standup" in out
+
+
+def test_changed_defaults_to_the_last_week_in_the_effective_zone(cal,
+                                                                monkeypatch):
+    ft, run = cal
+    zone = ZoneInfo("Asia/Tokyo")
+    monkeypatch.setattr(calendar_svc, "_local_zone", lambda: zone)
+    ft.add("GET", "calendars/primary/events", {"items": []})
+    before = dt.datetime.now(zone).date()
+    run("calendar", "changed")
+    after = dt.datetime.now(zone).date()
+    url = ft.calls[0]["url"]
+    # A week back from local midnight — never UTC midnight.
+    assert any(f"updatedMin={(day - dt.timedelta(days=7)).isoformat()}"
+               "T00%3A00%3A00%2B09%3A00" in url for day in {before, after})
+    assert "00%3A00%3A00Z" not in url
+
+
+# -- out of office and focus time --------------------------------------------
+
+
+def test_out_of_office_sets_the_event_type_and_decline_mode(cal):
+    ft, run = cal
+    ft.add("POST", "calendars/primary/events", {"id": "ooo1",
+                                                "htmlLink": "http://cal/o"})
+    out = run("calendar", "out-of-office", "--start", "2026-01-05T09:00",
+              "--end", "2026-01-09T17:00", "--tz", "America/New_York",
+              "--decline", "all", "--message", "Back Monday")
+    body = json.loads(ft.calls[0]["data"])
+    assert body["eventType"] == "outOfOffice"
+    assert body["summary"] == "Out of office"
+    assert body["start"] == {"dateTime": "2026-01-05T09:00:00",
+                             "timeZone": "America/New_York"}
+    assert body["outOfOfficeProperties"] == {
+        "autoDeclineMode": "declineAllConflictingInvitations",
+        "declineMessage": "Back Monday"}
+    assert "created" in out and "ooo1" in out
+
+
+def test_out_of_office_declines_nothing_unless_asked(cal):
+    ft, run = cal
+    ft.add("POST", "calendars/primary/events", {"id": "ooo2"})
+    run("calendar", "out-of-office", "--start", "2026-01-05T09:00",
+        "--end", "2026-01-05T17:00", "--tz", "UTC")
+    body = json.loads(ft.calls[0]["data"])
+    # Declining a colleague's meeting is not something a forgotten flag
+    # should do on the user's behalf.
+    assert body["outOfOfficeProperties"] == {"autoDeclineMode": "declineNone"}
+
+
+def test_focus_time_carries_its_own_properties(cal):
+    ft, run = cal
+    ft.add("POST", "calendars/primary/events", {"id": "ft1"})
+    run("calendar", "focus-time", "--start", "2026-01-05T09:00",
+        "--end", "2026-01-05T11:00", "--tz", "UTC",
+        "--summary", "Deep work", "--chat", "doNotDisturb")
+    body = json.loads(ft.calls[0]["data"])
+    assert body["eventType"] == "focusTime"
+    assert body["summary"] == "Deep work"
+    assert body["focusTimeProperties"] == {"autoDeclineMode": "declineNone",
+                                           "chatStatus": "doNotDisturb"}
+    assert "outOfOfficeProperties" not in body
+
+
+@pytest.mark.parametrize("command", ["out-of-office", "focus-time"])
+def test_special_events_reject_whole_day_dates(cal, command):
+    """Both types are blocks of time; Google has no all-day form for them."""
+    ft, run = cal
+    run("calendar", command, "--start", "2026-01-05", "--end", "2026-01-06",
+        expect=1)
+    assert ft.calls == []
+
+
+# -- conflicts ---------------------------------------------------------------
+#
+# What counts as an overlap is the whole substance of this command. Two
+# meetings that merely touch are not a clash; an all-day event covers a
+# *local* day, not a UTC one; and an event nobody is attending — cancelled,
+# declined, or marked free — does not occupy the slot it sits in.
+
+
+def _timed(event_id, summary, start, end, **extra):
+    return {"id": event_id, "summary": summary,
+            "start": {"dateTime": start}, "end": {"dateTime": end}, **extra}
+
+
+def _all_day(event_id, summary, start, end):
+    return {"id": event_id, "summary": summary,
+            "start": {"date": start}, "end": {"date": end}}
+
+
+def _rows(out):
+    return out.splitlines()[1:]  # everything after the header line
+
+
+def test_conflicts_reports_the_overlapping_span(cal):
+    ft, run = cal
+    ft.add("GET", "calendars/primary/events", {"items": [
+        _timed("e1", "Standup", "2026-01-05T09:00:00Z", "2026-01-05T09:30:00Z"),
+        _timed("e2", "Design review", "2026-01-05T09:15:00Z",
+               "2026-01-05T10:00:00Z"),
+    ]})
+    out = run("calendar", "conflicts", "--from", "2026-01-05",
+              "--to", "2026-01-06", "--tz", "UTC")
+    assert "singleEvents=true" in ft.calls[0]["url"]
+    lines = out.splitlines()
+    assert lines[0].split() == ["FROM", "TO", "EVENT", "ID",
+                                "CONFLICTS-WITH", "WITH-ID"]
+    assert len(_rows(out)) == 1
+    row = _rows(out)[0]
+    # The reported span is the overlap itself, not either event's own span.
+    assert "2026-01-05T09:15:00Z" in row and "2026-01-05T09:30:00Z" in row
+    assert "Standup" in row and "Design review" in row
+    assert "e1" in row and "e2" in row
+
+
+def test_conflicts_does_not_count_back_to_back_meetings(cal):
+    ft, run = cal
+    ft.add("GET", "calendars/primary/events", {"items": [
+        _timed("e1", "First", "2026-01-05T09:00:00Z", "2026-01-05T10:00:00Z"),
+        _timed("e2", "Second", "2026-01-05T10:00:00Z", "2026-01-05T11:00:00Z"),
+    ]})
+    out = run("calendar", "conflicts", "--from", "2026-01-05",
+              "--to", "2026-01-06", "--tz", "UTC")
+    assert _rows(out) == [], "an event ending as the next begins is not a clash"
+
+
+def test_conflicts_reports_every_overlapping_pair(cal):
+    ft, run = cal
+    ft.add("GET", "calendars/primary/events", {"items": [
+        _timed("e1", "One", "2026-01-05T09:00:00Z", "2026-01-05T10:00:00Z"),
+        _timed("e2", "Two", "2026-01-05T09:15:00Z", "2026-01-05T10:15:00Z"),
+        _timed("e3", "Three", "2026-01-05T09:30:00Z", "2026-01-05T10:30:00Z"),
+    ]})
+    out = run("calendar", "conflicts", "--from", "2026-01-05",
+              "--to", "2026-01-06", "--tz", "UTC")
+    assert len(_rows(out)) == 3
+
+
+def test_conflicts_skips_all_day_events_by_default(cal):
+    ft, run = cal
+    ft.add("GET", "calendars/primary/events", {"items": [
+        _all_day("h1", "Holiday", "2026-01-05", "2026-01-06"),
+        _timed("e1", "Standup", "2026-01-05T09:00:00Z", "2026-01-05T09:30:00Z"),
+    ]})
+    out = run("calendar", "conflicts", "--from", "2026-01-05",
+              "--to", "2026-01-06", "--tz", "UTC")
+    # A holiday overlaps every meeting that day; counted by default it would
+    # bury the double-bookings the command exists to surface.
+    assert _rows(out) == []
+
+
+def test_conflicts_can_include_all_day_events(cal):
+    ft, run = cal
+    ft.add("GET", "calendars/primary/events", {"items": [
+        _all_day("h1", "Holiday", "2026-01-05", "2026-01-06"),
+        _timed("e1", "Standup", "2026-01-05T09:00:00Z", "2026-01-05T09:30:00Z"),
+    ]})
+    out = run("calendar", "conflicts", "--from", "2026-01-05",
+              "--to", "2026-01-06", "--tz", "UTC", "--include-all-day")
+    rows = _rows(out)
+    assert len(rows) == 1
+    # The whole meeting falls inside the day, so the meeting *is* the overlap.
+    assert "2026-01-05T09:00:00Z" in rows[0]
+    assert "2026-01-05T09:30:00Z" in rows[0]
+
+
+def test_an_all_day_event_covers_the_local_day_not_the_utc_day(cal):
+    """The timezone bug class, in overlap form.
+
+    An all-day event on 2026-01-05 in Tokyo runs from 15:00Z on the 4th to
+    15:00Z on the 5th. A 16:00Z meeting on the 5th therefore falls *outside*
+    it — though a UTC-midnight reading of the same date would say it clashes.
+    """
+    ft, run = cal
+    ft.add("GET", "calendars/primary/events", {"items": [
+        _all_day("h1", "Holiday", "2026-01-05", "2026-01-06"),
+        _timed("e1", "Late call", "2026-01-05T16:00:00Z",
+               "2026-01-05T17:00:00Z"),
+    ]})
+    out = run("calendar", "conflicts", "--from", "2026-01-05",
+              "--to", "2026-01-07", "--tz", "Asia/Tokyo", "--include-all-day")
+    assert _rows(out) == []
+
+
+def test_conflicts_ignores_events_that_do_not_occupy_their_slot(cal):
+    ft, run = cal
+    ft.add("GET", "calendars/primary/events", {"items": [
+        _timed("e1", "Standup", "2026-01-05T09:00:00Z", "2026-01-05T09:30:00Z"),
+        _timed("e2", "Declined", "2026-01-05T09:00:00Z",
+               "2026-01-05T10:00:00Z",
+               attendees=[{"email": "a@x.com", "self": True,
+                           "responseStatus": "declined"}]),
+        _timed("e3", "Marked free", "2026-01-05T09:00:00Z",
+               "2026-01-05T10:00:00Z", transparency="transparent"),
+        _timed("e4", "Cancelled", "2026-01-05T09:00:00Z",
+               "2026-01-05T10:00:00Z", status="cancelled"),
+    ]})
+    out = run("calendar", "conflicts", "--from", "2026-01-05",
+              "--to", "2026-01-06", "--tz", "UTC")
+    assert _rows(out) == []
+
+
+def test_conflicts_still_counts_a_meeting_the_user_accepted(cal):
+    ft, run = cal
+    ft.add("GET", "calendars/primary/events", {"items": [
+        _timed("e1", "Standup", "2026-01-05T09:00:00Z", "2026-01-05T09:30:00Z"),
+        _timed("e2", "Review", "2026-01-05T09:00:00Z", "2026-01-05T10:00:00Z",
+               attendees=[{"email": "a@x.com", "self": True,
+                           "responseStatus": "accepted"}]),
+    ]})
+    out = run("calendar", "conflicts", "--from", "2026-01-05",
+              "--to", "2026-01-06", "--tz", "UTC")
+    assert len(_rows(out)) == 1
+
+
+def test_conflicts_skips_events_it_cannot_place_in_time(cal):
+    ft, run = cal
+    ft.add("GET", "calendars/primary/events", {"items": [
+        {"id": "bad", "summary": "Broken", "start": {"dateTime": "whenever"},
+         "end": {"dateTime": "whenever"}},
+        {"id": "empty", "summary": "No times"},
+        _timed("e1", "Standup", "2026-01-05T09:00:00Z", "2026-01-05T09:30:00Z"),
+        _timed("e2", "Review", "2026-01-05T09:15:00Z", "2026-01-05T10:00:00Z"),
+    ]})
+    out = run("calendar", "conflicts", "--from", "2026-01-05",
+              "--to", "2026-01-06", "--tz", "UTC")
+    # A reply we cannot read is the server's problem, not the user's: drop
+    # the event rather than fail the whole report.
+    assert len(_rows(out)) == 1
+
+
+def test_conflicts_defaults_to_the_week_ahead_in_the_effective_zone(
+        cal, monkeypatch):
+    ft, run = cal
+    zone = ZoneInfo("Asia/Tokyo")
+    monkeypatch.setattr(calendar_svc, "_local_zone", lambda: zone)
+    ft.add("GET", "calendars/primary/events", {"items": []})
+    before = dt.datetime.now(zone).date()
+    run("calendar", "conflicts")
+    after = dt.datetime.now(zone).date()
+    url = ft.calls[0]["url"]
+    assert any(f"timeMin={day.isoformat()}T00%3A00%3A00%2B09%3A00" in url
+               for day in {before, after})
+    assert any(f"timeMax={(day + dt.timedelta(days=7)).isoformat()}"
+               "T00%3A00%3A00%2B09%3A00" in url for day in {before, after})
+    assert "00%3A00%3A00Z" not in url
