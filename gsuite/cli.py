@@ -18,7 +18,7 @@ SERVICE_MODULES: list[str] = ["auth", "gmail", "calendar", "drive", "docs",
                               "sheets", "slides", "contacts", "tasks",
                               "chat", "keep", "admin", "forms", "meet",
                               "searchconsole", "analytics", "api",
-                              "completion"]
+                              "completion", "workflow"]
 
 TIMEOUT_ENV = "GSUITE_TIMEOUT"
 

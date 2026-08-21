@@ -24,3 +24,4 @@ One page per service, generated from the CLI's own parser tree by
 | [`gsuite analytics`](analytics.md) | Google Analytics 4: properties and reports |
 | [`gsuite api`](api.md) | raw calls to any Google API |
 | [`gsuite completion`](completion.md) | shell tab-completion (generated from the parser tree) |
+| [`gsuite workflow`](workflow.md) | cross-service helpers built from several APIs |

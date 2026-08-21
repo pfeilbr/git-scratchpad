@@ -35,6 +35,10 @@ per command in `parity/`, and CI fails if it widens.
   `analytics` (GA4 properties, reports, realtime).
 - **Escape hatches** — `api` (authorized call to any Google API, plus
   Discovery browsing) and `completion` (bash/zsh, generated from the parser).
+- **Cross-service** — `workflow` (standup report, meeting prep, weekly
+  digest, email-to-task, file announce): each command composes two or more of
+  the APIs above into one answer, and names every service it needs when one
+  of them is not authorized.
 
 ### Authentication
 

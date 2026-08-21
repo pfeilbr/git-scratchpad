@@ -54,4 +54,5 @@ nav:
       - analytics: reference/analytics.md
       - api: reference/api.md
       - completion: reference/completion.md
+      - workflow: reference/workflow.md
   - Development: development.md

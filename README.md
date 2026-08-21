@@ -94,6 +94,7 @@ worked examples.
 | [`gsuite analytics`](docs/reference/analytics.md)<br/><sub>Google Analytics 4: properties and reports</sub> | `properties` · `report` · `realtime` |
 | [`gsuite api`](docs/reference/api.md)<br/><sub>raw calls to any Google API</sub> | `call` · `describe` · `list` |
 | [`gsuite completion`](docs/reference/completion.md)<br/><sub>shell tab-completion (generated from the parser tree)</sub> | `bash` · `zsh` |
+| [`gsuite workflow`](docs/reference/workflow.md)<br/><sub>cross-service helpers built from several APIs</sub> | `standup-report` · `meeting-prep` · `weekly-digest` · `email-to-task` · `file-announce` |
 <!-- END GENERATED COMMAND SUMMARY -->
 
 ### Notes
@@ -158,7 +159,7 @@ goes stale.
 | `gws` | 24 | 10 (53% of in-scope) | 5 | 9 |
 | `gog` | 586 | 97 (18% of in-scope) | 41 | 448 |
 
-`gsuite` ships **149 commands**. Percentages are of the in-scope surface — the exclusions and their reasons are in [`parity/mapping.tsv`](parity/mapping.tsv), and the upstream lists in [`parity/upstream.tsv`](parity/upstream.tsv) carry the URL and digest they were read from. Regenerate with `python3 scripts/parity.py`.
+`gsuite` ships **154 commands**. Percentages are of the in-scope surface — the exclusions and their reasons are in [`parity/mapping.tsv`](parity/mapping.tsv), and the upstream lists in [`parity/upstream.tsv`](parity/upstream.tsv) carry the URL and digest they were read from. Regenerate with `python3 scripts/parity.py`.
 
 <!-- END GENERATED PARITY -->
 
