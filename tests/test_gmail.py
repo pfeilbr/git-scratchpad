@@ -712,6 +712,26 @@ def test_reply_all_prefers_reply_to_over_the_sender(gmail):
     assert mime["To"] == "list@x.com, bob@x.com"
 
 
+def test_reply_all_promotes_the_copies_when_only_you_were_addressed(gmail):
+    """A message needs a To line.
+
+    On mail addressed to you and copied to others — a forward from yourself,
+    a list that puts everyone on Cc — dropping yourself empties the To line
+    while real participants are still on Cc. They become the recipients
+    rather than the reply being refused as having nobody to go to.
+    """
+    ft, run = gmail
+    ft.add("GET", "messages/m1", meta("m1", {"From": "a@x.com",
+                                             "To": "a@x.com",
+                                             "Cc": "bob@x.com, carol@x.com",
+                                             "Subject": "fyi"}))
+    ft.add("POST", "messages/send", {"id": "sentc"})
+    run("gmail", "reply-all", "m1", "--body", "answer")
+    _, mime = sent_mime(ft)
+    assert mime["To"] == "bob@x.com, carol@x.com"
+    assert mime["Cc"] is None
+
+
 def test_reply_all_errors_when_every_participant_is_me(gmail):
     ft, run = gmail
     ft.add("GET", "messages/m1", meta("m1", {"From": "a@x.com",

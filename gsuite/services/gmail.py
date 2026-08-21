@@ -275,12 +275,18 @@ def _reply_all_recipients(headers: dict, me: str) -> tuple[str, str]:
             kept.append(formataddr((name, address)))
         return ", ".join(kept)
 
-    sender = ("Reply-To", headers["reply-to"]) if headers.get("reply-to") \
-        else ("From", headers.get("from", ""))
+    sender = (("Reply-To", headers["reply-to"]) if headers.get("reply-to")
+              else ("From", headers.get("from", "")))
     to = ", ".join(part for part in (pick(*sender),
                                      pick("To", headers.get("to", "")))
                    if part)
-    return to, pick("Cc", headers.get("cc", ""))
+    cc = pick("Cc", headers.get("cc", ""))
+    # Mail addressed to you and copied to others — a forward from yourself, a
+    # list that puts everyone on Cc — has an empty To line once you are
+    # dropped, while real participants are still on Cc. A message needs a To,
+    # so the copies become the recipients instead of the reply having nowhere
+    # to go.
+    return (to, cc) if to else (cc, "")
 
 
 def _reply(args, *, to_all: bool) -> int:
