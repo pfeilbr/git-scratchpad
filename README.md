@@ -93,6 +93,7 @@ worked examples.
 | [`gsuite searchconsole`](docs/reference/searchconsole.md)<br/><sub>Search Console: sites, search analytics, URL inspection</sub> | `sites` · `query` · `inspect` |
 | [`gsuite analytics`](docs/reference/analytics.md)<br/><sub>Google Analytics 4: properties and reports</sub> | `properties` · `report` · `realtime` |
 | [`gsuite classroom`](docs/reference/classroom.md)<br/><sub>Google Classroom: courses, rosters, coursework</sub> | `courses list|get|create|update|archive|unarchive|delete` · `students list|get|add|remove` · `teachers list|get|add|remove` · `coursework list|get|create|update|delete` · `submissions list|get|grade|return|turn-in|reclaim` · `announcements list|get|create|update|delete` · `topics list|get|create|update|delete` |
+| [`gsuite workflow`](docs/reference/workflow.md)<br/><sub>cross-service helpers built from several APIs</sub> | `standup-report` · `meeting-prep` · `weekly-digest` · `email-to-task` · `file-announce` |
 | [`gsuite api`](docs/reference/api.md)<br/><sub>raw calls to any Google API</sub> | `call` · `describe` · `list` |
 | [`gsuite completion`](docs/reference/completion.md)<br/><sub>shell tab-completion (generated from the parser tree)</sub> | `bash` · `zsh` |
 <!-- END GENERATED COMMAND SUMMARY -->
@@ -156,10 +157,10 @@ goes stale.
 
 | Upstream tool | Commands | Provided here | Deliberately out of scope | Not yet |
 | --- | --- | --- | --- | --- |
-| `gws` | 24 | 10 (53% of in-scope) | 5 | 9 |
+| `gws` | 24 | 15 (79% of in-scope) | 5 | 4 |
 | `gog` | 586 | 146 (27% of in-scope) | 41 | 399 |
 
-`gsuite` ships **199 commands**. Percentages are of the in-scope surface — the exclusions and their reasons are in [`parity/mapping.tsv`](parity/mapping.tsv), and the upstream lists in [`parity/upstream.tsv`](parity/upstream.tsv) carry the URL and digest they were read from. Regenerate with `python3 scripts/parity.py`.
+`gsuite` ships **204 commands**. Percentages are of the in-scope surface — the exclusions and their reasons are in [`parity/mapping.tsv`](parity/mapping.tsv), and the upstream lists in [`parity/upstream.tsv`](parity/upstream.tsv) carry the URL and digest they were read from. Regenerate with `python3 scripts/parity.py`.
 
 <!-- END GENERATED PARITY -->
 

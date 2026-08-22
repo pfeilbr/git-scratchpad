@@ -221,6 +221,34 @@ EXAMPLES: dict[str, list[tuple[str, str, str]]] = {
          "METHOD               HTTP  PATH             DESCRIPTION\n"
          "forms.forms.create   POST  v1/forms         Create a new form."),
     ],
+    "workflow": [
+        ("What does today look like? (Calendar + Tasks)",
+         "gsuite workflow standup-report",
+         "KIND     WHEN                       ITEM\n"
+         "meeting  2026-01-05T09:00:00-05:00  Standup\n"
+         "meeting  2026-01-05T14:00:00-05:00  Design review\n"
+         "task     2026-01-09T00:00:00Z       File expenses"),
+        ("Walk into the next meeting prepared (Calendar + Drive)",
+         "gsuite workflow meeting-prep",
+         "summary: Design review\n"
+         "start: 2026-01-07T14:00:00-05:00\n"
+         "end: 2026-01-07T15:00:00-05:00\n"
+         "location: Room 4\n"
+         "attendees: Ada Lovelace (accepted), bob@example.com (needsAction)\n"
+         "files: Q1 budget (https://docs.google.com/spreadsheets/d/…)\n"
+         "agenda: Decide the launch date."),
+        ("The week at a glance (Calendar + Gmail)",
+         "gsuite workflow weekly-digest",
+         "from: 2026-01-05\nto: 2026-01-11\nmeetings: 7\n"
+         "days: 2026-01-05 (3), 2026-01-07 (4)\nunread: 12"),
+        ("File a mail as work to do (Gmail + Tasks)",
+         "gsuite workflow email-to-task 19ab3f --due 2026-01-09",
+         "added t9 Q1 roadmap"),
+        ("Tell the team about a file (Drive + Chat)",
+         "gsuite workflow file-announce 1AbCdEf --space spaces/AAAA "
+         "--text 'Numbers are final'",
+         "sent spaces/AAAA/messages/BBBB.CCCC"),
+    ],
     "completion": [
         ("Enable bash completion (add the source line to ~/.bashrc to persist)",
          "source <(gsuite completion bash)\n"

@@ -98,3 +98,8 @@ gws	modelarmor +sanitize-prompt	excluded	Model Armor is a Google Cloud security 
 gws	modelarmor +sanitize-response	excluded	Model Armor is a Google Cloud security product, not part of Google Workspace
 gws	sheets +append	alias	sheets append
 gws	sheets +read	alias	sheets read
+gws	workflow +email-to-task	alias	workflow email-to-task
+gws	workflow +file-announce	alias	workflow file-announce
+gws	workflow +meeting-prep	alias	workflow meeting-prep
+gws	workflow +standup-report	alias	workflow standup-report
+gws	workflow +weekly-digest	alias	workflow weekly-digest

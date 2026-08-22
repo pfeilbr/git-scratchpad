@@ -23,5 +23,6 @@ One page per service, generated from the CLI's own parser tree by
 | [`gsuite searchconsole`](searchconsole.md) | Search Console: sites, search analytics, URL inspection |
 | [`gsuite analytics`](analytics.md) | Google Analytics 4: properties and reports |
 | [`gsuite classroom`](classroom.md) | Google Classroom: courses, rosters, coursework |
+| [`gsuite workflow`](workflow.md) | cross-service helpers built from several APIs |
 | [`gsuite api`](api.md) | raw calls to any Google API |
 | [`gsuite completion`](completion.md) | shell tab-completion (generated from the parser tree) |

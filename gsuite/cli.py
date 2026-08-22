@@ -17,8 +17,8 @@ from gsuite.output import check_flags
 SERVICE_MODULES: list[str] = ["auth", "gmail", "calendar", "drive", "docs",
                               "sheets", "slides", "contacts", "tasks",
                               "chat", "keep", "admin", "forms", "meet",
-                              "searchconsole", "analytics", "classroom",
-                              "api", "completion"]
+                              "searchconsole", "analytics",
+                              "classroom", "workflow", "api", "completion"]
 
 TIMEOUT_ENV = "GSUITE_TIMEOUT"
 

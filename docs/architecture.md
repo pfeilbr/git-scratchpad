@@ -16,6 +16,7 @@ flowchart TD
         SL[slides] --- CO[contacts] --- TA[tasks] --- CH[chat] --- KE[keep]
         AD[admin] --- FO[forms] --- ME[meet] --- SC[searchconsole]
         AN[analytics] --- CR[classroom] --- AP[api] --- CP[completion]
+        WF["workflow<br/><i>composes the modules above</i>"]
     end
 
     CLI --> SVC
