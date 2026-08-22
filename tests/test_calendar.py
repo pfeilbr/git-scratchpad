@@ -381,6 +381,36 @@ def test_event_id_is_escaped_as_one_path_segment(cal, argv, method):
     assert "events/a/b" not in url
 
 
+@pytest.mark.parametrize("event_id, encoded", [
+    ("a/b", "a%2Fb"),
+    ("abc?x=1", "abc%3Fx%3D1"),
+    ("abc#frag", "abc%23frag"),
+    ("has space", "has%20space"),
+    ("../../../oauth2/v1/tokeninfo", "..%2F..%2F..%2Foauth2%2Fv1%2Ftokeninfo"),
+])
+def test_event_id_cannot_break_out_of_its_path_segment(cal, event_id, encoded):
+    """The characters that end a path, spelled out one by one.
+
+    Unescaped, `?` starts a query string, `#` starts a fragment and `/`
+    walks to a different endpoint — so the request would go somewhere other
+    than the event the command named, and none of it raises, which is why
+    the fuzzer stayed green over this for so long.
+    """
+    ft, run = cal
+    ft.add("GET", f"events/{encoded}", {"id": event_id})
+    run("calendar", "get", event_id)
+    segment = ft.calls[0]["url"].split("/events/")[1]
+    assert segment == encoded
+    assert not any(ch in segment for ch in "?# ")
+
+
+def test_move_escapes_the_event_id(cal):
+    ft, run = cal
+    ft.add("POST", "events/abc%3Fx%3D1/move", {"id": "abc?x=1"})
+    run("calendar", "move", "abc?x=1", "--to", "team@x.com")
+    assert "events/abc%3Fx%3D1/move" in ft.calls[0]["url"]
+
+
 def test_respond_escapes_the_event_id(cal):
     ft, run = cal
     ft.add("GET", "events/a%2Fb", {"id": "a/b", "attendees": [
