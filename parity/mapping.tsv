@@ -26,6 +26,7 @@ gog	backup init	excluded	encrypted account backups need an AES implementation, w
 gog	backup push	excluded	encrypted account backups need an AES implementation, which the standard library does not provide
 gog	backup status	excluded	encrypted account backups need an AES implementation, which the standard library does not provide
 gog	backup verify	excluded	encrypted account backups need an AES implementation, which the standard library does not provide
+gog	calendar acl	alias	calendar acl list
 gog	calendar event	alias	calendar get
 gog	download	alias	drive download
 gog	drive audit sharing	alias	drive audit

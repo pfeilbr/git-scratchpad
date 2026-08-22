@@ -8,7 +8,7 @@ One page per service, generated from the CLI's own parser tree by
 | --- | --- |
 | [`gsuite auth`](auth.md) | login, accounts, aliases, tokens |
 | [`gsuite gmail`](gmail.md) | search, read, send, labels, drafts |
-| [`gsuite calendar`](calendar.md) | calendars, events, agenda |
+| [`gsuite calendar`](calendar.md) | calendars, events, agenda, conflicts, sharing |
 | [`gsuite drive`](drive.md) | files: ls, search, upload, share |
 | [`gsuite docs`](docs.md) | Google Docs: create, cat, append, replace |
 | [`gsuite sheets`](sheets.md) | spreadsheets: read/append/update |
