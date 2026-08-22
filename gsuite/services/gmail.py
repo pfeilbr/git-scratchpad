@@ -1,22 +1,34 @@
-"""`gsuite gmail` — search, read, threads, attachments, send, reply,
-forward, labels, drafts, trash, settings (vacation, signature, filters),
-batch label edits."""
+"""`gsuite gmail` — search, triage, read, threads, attachments, send, reply,
+reply-all, forward, labels, drafts, trash, settings (vacation, signature,
+filters, send-as, delegates, forwarding), batch label edits."""
 from __future__ import annotations
 
+import argparse
 import base64
 import json
 import mimetypes
 import os
 from email.message import EmailMessage
+from email.utils import formataddr, getaddresses
 from typing import Sequence
 
 from gsuite.api import Client, quote_id
-from gsuite.cmdreg import Cmd, Group, arg, max_flag, register_service
+from gsuite.cmdreg import Cmd, Group, _add_cmd, arg, max_flag, register_service
 from gsuite.errors import CLIError
 from gsuite.output import confirm, emit, emit_obj
 from gsuite.services._common import make_dir, read_file, write_file
 
 BASE = "https://gmail.googleapis.com/gmail/v1/users/me"
+
+# The settings collections, named once because several commands share each.
+SENDAS = f"{BASE}/settings/sendAs"
+DELEGATES = f"{BASE}/settings/delegates"
+FORWARDING = f"{BASE}/settings/forwardingAddresses"
+AUTOFORWARD = f"{BASE}/settings/autoForwarding"
+
+# What Gmail may do with a message once it has been forwarded on. The API's
+# own enum values, verbatim, so its documentation reads as the flag's.
+DISPOSITIONS = ["leaveInInbox", "archive", "trash", "markRead"]
 
 COMPOSE_ARGS = (arg("--to", required=True), arg("--subject", default=""),
                 arg("--body", default=""), arg("--cc"), arg("--bcc"),
@@ -94,27 +106,56 @@ def _build_mime(to: str, subject: str, body: str, cc: str | None = None,
     return base64.urlsafe_b64encode(msg.as_bytes()).decode()
 
 
+# `format=metadata` returns *only* the headers named here, so a header left
+# off this list reads as absent on every real message — which is how `reply`
+# came to prefer a Reply-To it never asked for. Cc and Reply-To earn their
+# place: `reply-all` addresses from them and `reply` prefers Reply-To.
+META_HEADERS = ["From", "To", "Cc", "Reply-To", "Subject", "Date", "Message-ID"]
+
+# What `triage` means by "needs attention": unread, and still in the inbox.
+TRIAGE_QUERY = "is:unread in:inbox"
+
+
 def _fetch_meta(client: Client, msg_id: str) -> dict:
     return client.get(f"{BASE}/messages/{quote_id(msg_id)}", params={
         "format": "metadata",
-        "metadataHeaders": ["From", "To", "Subject", "Date", "Message-ID"],
+        "metadataHeaders": META_HEADERS,
     })
 
 
-def cmd_search(args) -> int:
-    client = Client.for_args(args)
-    refs = client.paged(f"{BASE}/messages", params={"q": args.query},
-                        key="messages", limit=args.max)
+def _summaries(client: Client, query: str, limit: int) -> list[dict]:
+    """Search, then fetch each hit's headers: one row per matching message.
+
+    A search response carries ids and nothing else, so every listing that
+    shows who a message is from costs one round trip per hit. Both listings
+    that do (`search`, `triage`) differ only in the query they start from.
+    """
     rows = []
-    for ref in refs:
+    for ref in client.paged(f"{BASE}/messages", params={"q": query},
+                            key="messages", limit=limit):
         message = _fetch_meta(client, ref["id"])
         headers = _headers(message)
         rows.append({"id": message["id"], "date": headers.get("date", ""),
                      "from": headers.get("from", ""),
                      "subject": headers.get("subject", ""),
                      "snippet": message.get("snippet", "")})
+    return rows
+
+
+def cmd_search(args) -> int:
+    rows = _summaries(Client.for_args(args), args.query, args.max)
     emit(args, rows, [("ID", "id"), ("DATE", "date"), ("FROM", "from"),
                       ("SUBJECT", "subject")])
+    return 0
+
+
+def cmd_triage(args) -> int:
+    rows = _summaries(Client.for_args(args), TRIAGE_QUERY, args.max)
+    # Sender and subject lead — triage is read left to right, deciding per
+    # row — but the id still comes first, because the whole point of the
+    # listing is to feed the id to the command that deals with the message.
+    emit(args, rows, [("ID", "id"), ("FROM", "from"), ("SUBJECT", "subject"),
+                      ("DATE", "date")])
     return 0
 
 
@@ -199,7 +240,56 @@ def cmd_send(args) -> int:
     return 0
 
 
-def cmd_reply(args) -> int:
+def _addresses(label: str, raw: str) -> list[tuple[str, str]]:
+    """One recipient header as (display name, address) pairs.
+
+    The value is checked with `_header` *before* it is parsed, not after:
+    `getaddresses` treats a smuggled `\\nBcc:` differently depending on the
+    Python patch level — older ones hand the smuggled header back as one
+    more address, newer ones return nothing at all — so leaving the check
+    until afterwards would either forward the injection or silently reply
+    to no one. Both are worse than saying which header is malformed.
+    """
+    _header(label, raw)
+    return [(name, addr) for name, addr in getaddresses([raw]) if addr]
+
+
+def _reply_all_recipients(headers: dict, me: str) -> tuple[str, str]:
+    """(To, Cc) for a reply to everyone still worth replying to.
+
+    Reply-all is the sender plus everyone they addressed, minus you: mail
+    you sent yourself a copy of should not land in your own inbox again.
+    Addresses are compared case-insensitively (the local part is officially
+    case-sensitive, but no mail provider treats it that way) and each one is
+    kept only the first time it appears, since the sender is usually on the
+    To line too and nobody wants two copies.
+    """
+    seen = {me.lower()} if me else set()
+
+    def pick(label: str, raw: str) -> str:
+        kept = []
+        for name, address in _addresses(label, raw):
+            if address.lower() in seen:
+                continue
+            seen.add(address.lower())
+            kept.append(formataddr((name, address)))
+        return ", ".join(kept)
+
+    sender = (("Reply-To", headers["reply-to"]) if headers.get("reply-to")
+              else ("From", headers.get("from", "")))
+    to = ", ".join(part for part in (pick(*sender),
+                                     pick("To", headers.get("to", "")))
+                   if part)
+    cc = pick("Cc", headers.get("cc", ""))
+    # Mail addressed to you and copied to others — a forward from yourself, a
+    # list that puts everyone on Cc — has an empty To line once you are
+    # dropped, while real participants are still on Cc. A message needs a To,
+    # so the copies become the recipients instead of the reply having nowhere
+    # to go.
+    return (to, cc) if to else (cc, "")
+
+
+def _reply(args, *, to_all: bool) -> int:
     client = Client.for_args(args)
     original = _fetch_meta(client, args.id)
     headers = _headers(original)
@@ -210,10 +300,25 @@ def cmd_reply(args) -> int:
     if headers.get("message-id"):
         extra["In-Reply-To"] = headers["message-id"]
         extra["References"] = headers["message-id"]
-    raw = _build_mime(headers.get("reply-to") or headers.get("from", ""),
-                      subject, args.body, extra_headers=extra)
+    cc = None
+    if to_all:
+        to, cc = _reply_all_recipients(headers, client.email)
+        if not to:
+            raise CLIError(f"no one to reply to on {args.id}: "
+                           "you are the only participant")
+    else:
+        to = headers.get("reply-to") or headers.get("from", "")
+    raw = _build_mime(to, subject, args.body, cc=cc, extra_headers=extra)
     _send(client, raw, thread_id=original.get("threadId"))
     return 0
+
+
+def cmd_reply(args) -> int:
+    return _reply(args, to_all=False)
+
+
+def cmd_reply_all(args) -> int:
+    return _reply(args, to_all=True)
 
 
 def cmd_forward(args) -> int:
@@ -357,7 +462,7 @@ def cmd_vacation_off(args) -> int:
 
 def _send_as_entry(client: Client, email: str | None) -> dict:
     """The send-as entry for `email`, or the primary one when no email given."""
-    entries = client.get(f"{BASE}/settings/sendAs").get("sendAs", [])
+    entries = client.get(SENDAS).get("sendAs", [])
     for entry in entries:
         wanted = (entry.get("sendAsEmail") == email if email
                   else entry.get("isPrimary"))
@@ -376,9 +481,191 @@ def cmd_signature_show(args) -> int:
 def cmd_signature_set(args) -> int:
     client = Client.for_args(args)
     email = _send_as_entry(client, args.send_as)["sendAsEmail"]
-    client.patch(f"{BASE}/settings/sendAs/{quote_id(email)}",
+    client.patch(f"{SENDAS}/{quote_id(email)}",
                  json_body={"signature": args.html})
     confirm("signature updated for", email)
+    return 0
+
+
+# -- settings: send-as addresses --------------------------------------------
+#
+# Signatures are deliberately absent from `create` and `update`: `gmail
+# signature set` already writes that field, and two commands writing one
+# field is how the two of them drift apart. `get` still shows the signature,
+# because showing is not owning.
+
+def cmd_sendas_list(args) -> int:
+    entries = Client.for_args(args).get(SENDAS).get("sendAs", [])
+    emit(args, entries, [
+        ("EMAIL", "sendAsEmail"),
+        ("NAME", "displayName"),
+        ("PRIMARY", lambda e: "yes" if e.get("isPrimary") else ""),
+        ("DEFAULT", lambda e: "yes" if e.get("isDefault") else ""),
+        # Blank for the primary address, which needs no verifying.
+        ("VERIFIED", "verificationStatus"),
+    ])
+    return 0
+
+
+def cmd_sendas_get(args) -> int:
+    entry = Client.for_args(args).get(f"{SENDAS}/{quote_id(args.email)}")
+    emit_obj(args, {
+        "email": entry.get("sendAsEmail", ""),
+        "name": entry.get("displayName", ""),
+        "reply-to": entry.get("replyToAddress", ""),
+        "primary": entry.get("isPrimary", False),
+        "default": entry.get("isDefault", False),
+        "verified": entry.get("verificationStatus", ""),
+        "alias": entry.get("treatAsAlias", False),
+        "signature": entry.get("signature", ""),
+    })
+    return 0
+
+
+def cmd_sendas_create(args) -> int:
+    body = {"sendAsEmail": args.email}
+    if args.name:
+        body["displayName"] = args.name
+    if args.reply_to:
+        body["replyToAddress"] = args.reply_to
+    if args.treat_as_alias:
+        body["treatAsAlias"] = True
+    created = Client.for_args(args).post(SENDAS, json_body=body)
+    # Any address that is not already yours gets a confirmation mail, and
+    # cannot send until someone follows the link — so say which it was.
+    confirm("created", created.get("sendAsEmail", args.email),
+            created.get("verificationStatus", ""))
+    return 0
+
+
+def cmd_sendas_update(args) -> int:
+    body: dict = {}
+    # `is not None`, not truthiness: `--name ""` asks for the display name to
+    # be cleared, which is a change, while omitting --name asks for nothing.
+    if args.name is not None:
+        body["displayName"] = args.name
+    if args.reply_to is not None:
+        body["replyToAddress"] = args.reply_to
+    if args.default:
+        body["isDefault"] = True
+    if not body:
+        raise CLIError("give at least one field to change: "
+                       "--name, --reply-to or --default")
+    updated = Client.for_args(args).patch(f"{SENDAS}/{quote_id(args.email)}",
+                                          json_body=body)
+    confirm("updated", updated.get("sendAsEmail", args.email))
+    return 0
+
+
+def cmd_sendas_delete(args) -> int:
+    Client.for_args(args).delete(f"{SENDAS}/{quote_id(args.email)}")
+    confirm("deleted send-as", args.email)
+    return 0
+
+
+def cmd_sendas_verify(args) -> int:
+    Client.for_args(args).post(f"{SENDAS}/{quote_id(args.email)}/verify")
+    confirm("verification email sent to", args.email)
+    return 0
+
+
+# -- settings: delegates, forwarding addresses, auto-forwarding -------------
+#
+# Delegates and forwarding addresses are the same shape — a collection of
+# addresses, each either accepted or waiting on the confirmation mail Google
+# sends — so they share their listing and their single-address view. What
+# differs is only the field the address lives in and the verb that reads
+# right afterwards, which is why those are arguments here.
+
+def _address_list(args, url: str, key: str, field: str) -> int:
+    entries = Client.for_args(args).get(url).get(key, [])
+    emit(args, entries, [("EMAIL", field), ("STATUS", "verificationStatus")])
+    return 0
+
+
+def _address_get(args, url: str, field: str) -> int:
+    entry = Client.for_args(args).get(f"{url}/{quote_id(args.email)}")
+    emit_obj(args, {"email": entry.get(field, ""),
+                    "status": entry.get("verificationStatus", "")})
+    return 0
+
+
+def _address_add(args, url: str, field: str, verb: str) -> int:
+    created = Client.for_args(args).post(url, json_body={field: args.email})
+    # Until the address owner follows Google's confirmation link the entry
+    # exists but does nothing, so the status belongs in the confirmation.
+    confirm(verb, created.get(field, args.email),
+            created.get("verificationStatus", ""))
+    return 0
+
+
+def _address_remove(args, url: str, verb: str) -> int:
+    Client.for_args(args).delete(f"{url}/{quote_id(args.email)}")
+    confirm(verb, args.email)
+    return 0
+
+
+def cmd_delegates_list(args) -> int:
+    return _address_list(args, DELEGATES, "delegates", "delegateEmail")
+
+
+def cmd_delegates_get(args) -> int:
+    return _address_get(args, DELEGATES, "delegateEmail")
+
+
+def cmd_delegates_add(args) -> int:
+    return _address_add(args, DELEGATES, "delegateEmail", "added delegate")
+
+
+def cmd_delegates_remove(args) -> int:
+    return _address_remove(args, DELEGATES, "removed delegate")
+
+
+def cmd_forwarding_list(args) -> int:
+    return _address_list(args, FORWARDING, "forwardingAddresses",
+                         "forwardingEmail")
+
+
+def cmd_forwarding_get(args) -> int:
+    return _address_get(args, FORWARDING, "forwardingEmail")
+
+
+def cmd_forwarding_create(args) -> int:
+    return _address_add(args, FORWARDING, "forwardingEmail", "created")
+
+
+def cmd_forwarding_delete(args) -> int:
+    return _address_remove(args, FORWARDING, "deleted forwarding address")
+
+
+def cmd_autoforward_get(args) -> int:
+    settings = Client.for_args(args).get(AUTOFORWARD)
+    emit_obj(args, {
+        "enabled": settings.get("enabled", False),
+        "to": settings.get("emailAddress", ""),
+        "disposition": settings.get("disposition", ""),
+    })
+    return 0
+
+
+def cmd_autoforward_update(args) -> int:
+    if args.off and args.to:
+        raise CLIError("--off stops forwarding, so it takes no --to")
+    if not args.off and not args.to:
+        raise CLIError("give --to EMAIL to forward to, or --off to stop "
+                       "forwarding")
+    if args.off:
+        Client.for_args(args).put(AUTOFORWARD, json_body={"enabled": False})
+        confirm("auto-forwarding disabled")
+        return 0
+    # Gmail refuses an address that has not confirmed itself, which is why
+    # --to's help names the command that lists the ones that have.
+    Client.for_args(args).put(AUTOFORWARD, json_body={
+        "enabled": True,
+        "emailAddress": args.to,
+        "disposition": args.disposition,
+    })
+    confirm("auto-forwarding to", args.to, f"({args.disposition})")
     return 0
 
 
@@ -440,10 +727,101 @@ def cmd_batch_modify(args) -> int:
     return 0
 
 
+def _sub_action(parser) -> argparse._SubParsersAction:
+    """The subcommand action argparse hung on `parser`."""
+    return next(a for a in parser._actions
+                if isinstance(a, argparse._SubParsersAction))
+
+
+def _add_nested(group_sub, group: Group) -> None:
+    """Attach a Group *inside* a group — a third level of commands.
+
+    `register_service` nests exactly one level: a service holds Groups and a
+    Group holds Cmds, and handing it a Group inside a Group is an
+    AttributeError. The Gmail settings surface is three deep — `gmail
+    settings sendas list` — because that is how the API names it, how `gog`
+    names it, and how the Gmail UI reads. Flattening it to `settings
+    sendas-list` would put this CLI's only compound verb at exactly the
+    place a user is most likely to guess the name from upstream, so the
+    third level is worth these few lines of argparse.
+
+    cmdreg's own `_add_cmd` builds the leaves rather than a copy of it, so a
+    Cmd keeps meaning here exactly what it means everywhere else.
+    """
+    parser = group_sub.add_parser(group.name, help=group.help)
+    sub = parser.add_subparsers(dest=f"{group.name}_command",
+                                metavar="<command>")
+    for cmd in group.commands:
+        _add_cmd(sub, cmd)
+
+
+# Flags shared by `settings sendas create` and `settings sendas update`.
+# `update` defaults them to None so that an empty value can still be told
+# apart from an absent one; see cmd_sendas_update.
+SENDAS_FIELDS = (arg("--name", metavar="DISPLAY",
+                     help="display name on outgoing mail"),
+                 arg("--reply-to", metavar="EMAIL",
+                     help="address replies should go to"))
+
+SETTINGS_GROUPS = (
+    Group("sendas", "send-as addresses", (
+        Cmd("list", cmd_sendas_list, "list send-as addresses"),
+        Cmd("get", cmd_sendas_get, "show one send-as address",
+            (arg("email"),)),
+        Cmd("create", cmd_sendas_create, "add a send-as address",
+            (arg("email"), *SENDAS_FIELDS,
+             arg("--treat-as-alias", action="store_true",
+                 help="treat mail to this address as mail to you"))),
+        Cmd("update", cmd_sendas_update, "change a send-as address",
+            (arg("email"), *SENDAS_FIELDS,
+             arg("--default", action="store_true",
+                 help="send new mail from this address by default"))),
+        Cmd("delete", cmd_sendas_delete, "remove a send-as address",
+            (arg("email"),)),
+        Cmd("verify", cmd_sendas_verify,
+            "send the ownership confirmation mail again", (arg("email"),)),
+    )),
+    # Delegation is a Workspace feature: on a consumer account Gmail answers
+    # these four with a 403, which the API layer already explains.
+    Group("delegates", "people who may read and send as this mailbox", (
+        Cmd("list", cmd_delegates_list, "list delegates"),
+        Cmd("get", cmd_delegates_get, "show one delegate", (arg("email"),)),
+        Cmd("add", cmd_delegates_add, "grant delegate access",
+            (arg("email"),)),
+        Cmd("remove", cmd_delegates_remove, "revoke delegate access",
+            (arg("email"),)),
+    )),
+    Group("forwarding", "addresses this mailbox may forward to", (
+        Cmd("list", cmd_forwarding_list, "list forwarding addresses"),
+        Cmd("get", cmd_forwarding_get, "show one forwarding address",
+            (arg("email"),)),
+        Cmd("create", cmd_forwarding_create, "add a forwarding address",
+            (arg("email"),)),
+        Cmd("delete", cmd_forwarding_delete, "remove a forwarding address",
+            (arg("email"),)),
+    )),
+    Group("autoforward", "forward incoming mail automatically", (
+        Cmd("get", cmd_autoforward_get, "show the auto-forwarding rule"),
+        Cmd("update", cmd_autoforward_update, "set the auto-forwarding rule",
+            (arg("--to", metavar="EMAIL",
+                 help="forward to this address (it must already be verified: "
+                      "`gsuite gmail settings forwarding list`)"),
+             arg("--disposition", choices=DISPOSITIONS,
+                 default=DISPOSITIONS[0],
+                 help="what to do with the original copy"),
+             arg("--off", action="store_true",
+                 help="stop forwarding incoming mail"))),
+    )),
+)
+
+
 def register(subparsers) -> None:
-    register_service(subparsers, "gmail", "search, read, send, labels, drafts", [
+    gmail = register_service(subparsers, "gmail",
+                             "search, read, send, labels, drafts", [
         Cmd("search", cmd_search, "search messages (Gmail query syntax)",
             (arg("query"), max_flag(20))),
+        Cmd("triage", cmd_triage, "summarize unread inbox mail",
+            (max_flag(20),)),
         Cmd("get", cmd_get, "read a message (plain-text body)", (arg("id"),)),
         Cmd("thread", cmd_thread, "read a whole thread (every message)",
             (arg("id"),)),
@@ -452,7 +830,10 @@ def register(subparsers) -> None:
              arg("-o", "--output", metavar="DIR",
                  help="download attachments into this directory"))),
         Cmd("send", cmd_send, "send an email", COMPOSE_ARGS),
-        Cmd("reply", cmd_reply, "reply on the original thread",
+        Cmd("reply", cmd_reply, "reply to the sender, on the original thread",
+            (arg("id"), arg("--body", required=True))),
+        Cmd("reply-all", cmd_reply_all,
+            "reply to every participant, on the original thread",
             (arg("id"), arg("--body", required=True))),
         Cmd("forward", cmd_forward, "forward a message",
             (arg("id"), arg("--to", required=True), arg("--body", default=""))),
@@ -505,9 +886,17 @@ def register(subparsers) -> None:
                           help="send matches to trash"))),
             Cmd("rm", cmd_filters_rm, args=(arg("id"),)),
         )),
+        # Declared empty on purpose: its members are groups themselves, one
+        # level deeper than register_service nests. _add_nested fills it in
+        # below — and explains why the depth is worth having.
+        Group("settings",
+              "mailbox settings: send-as, delegates, forwarding", ()),
         Cmd("batch-modify", cmd_batch_modify,
             "add/remove a label across all query matches",
             (arg("--query", required=True),
              arg("--add-label", metavar="NAME"),
              arg("--remove-label", metavar="NAME"), max_flag(500))),
     ])
+    settings = _sub_action(_sub_action(gmail).choices["settings"])
+    for group in SETTINGS_GROUPS:
+        _add_nested(settings, group)

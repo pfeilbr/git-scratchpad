@@ -54,13 +54,24 @@ EXAMPLES: dict[str, list[tuple[str, str, str]]] = {
          'gsuite gmail send --to bob@example.com --subject "Lunch?" '
          '--body "12:30 at the usual spot"',
          "sent 19ab41"),
+        ("Triage the unread inbox",
+         "gsuite gmail triage --max 3",
+         "ID      FROM               SUBJECT        DATE\n"
+         "19ab3f  alice@example.com  Q1 roadmap     Mon, 5 Jan 2026 09:14\n"
+         "19ab40  ci@example.com     Build #412 ok  Mon, 5 Jan 2026 08:02"),
         ("Reply within the original thread",
-         'gsuite gmail reply 19ab3f --body "Sounds good — shipping Friday."',
+         'gsuite gmail reply 19ab3f --body "Sounds good — shipping Friday."\n'
+         'gsuite gmail reply-all 19ab3f --body "Looping in the whole thread."',
          "sent 19ab42"),
         ("Label triage",
          "gsuite gmail labels create follow-up\n"
          "gsuite gmail labels apply 19ab3f follow-up",
          "applied follow-up to 19ab3f"),
+        ("Forward incoming mail to an address that has confirmed itself",
+         "gsuite gmail settings forwarding list\n"
+         "gsuite gmail settings autoforward update --to ops@example.com "
+         "--disposition archive",
+         "auto-forwarding to ops@example.com (archive)"),
     ],
     "calendar": [
         ("Today's agenda",

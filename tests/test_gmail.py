@@ -622,3 +622,412 @@ def test_ordinary_message_ids_are_unchanged(gmail):
     ft.add("POST", "messages/19ab3f/trash", {"id": "19ab3f"})
     run("gmail", "trash", "19ab3f")
     assert ft.calls[0]["url"].endswith("/users/me/messages/19ab3f/trash")
+
+
+# -- triage and reply-all (gws's `+triage` / `+reply-all`) -------------------
+
+def test_triage_lists_unread_inbox_mail(gmail):
+    ft, run = gmail
+    ft.add("GET", "messages?", {"messages": [{"id": "m1"}, {"id": "m2"}]})
+    ft.add("GET", "messages/m1",
+           meta("m1", {"From": "alice@x.com", "Subject": "Q1 roadmap",
+                       "Date": "Mon, 5 Jan 2026 09:14:00 +0000"}))
+    ft.add("GET", "messages/m2",
+           meta("m2", {"From": "bob@x.com", "Subject": "Ping",
+                       "Date": "Tue, 6 Jan 2026 09:14:00 +0000"}))
+    out = run("gmail", "triage")
+    assert "q=is%3Aunread+in%3Ainbox" in ft.calls[0]["url"]
+    assert "FROM" in out and "SUBJECT" in out and "DATE" in out
+    assert "alice@x.com" in out and "Q1 roadmap" in out
+    assert "bob@x.com" in out and "Ping" in out
+    # The id leads: triage exists to hand the next command something to act on.
+    assert "m1" in out and "m2" in out
+
+
+def test_triage_is_a_listing_that_honours_max_and_json(gmail):
+    ft, run = gmail
+    ft.add("GET", "messages?", {"messages": [{"id": "m1"}, {"id": "m2"}]})
+    ft.add("GET", "messages/m1",
+           meta("m1", {"From": "alice@x.com", "Subject": "Q1 roadmap",
+                       "Date": "Mon, 5 Jan 2026 09:14:00 +0000"}))
+    out = run("--json", "gmail", "triage", "--max", "1")
+    # --max stops the walk: the second id is never fetched.
+    assert [c["url"].rsplit("/", 1)[-1] for c in ft.calls[1:]] == [
+        "m1?format=metadata&metadataHeaders=From&metadataHeaders=To"
+        "&metadataHeaders=Cc&metadataHeaders=Reply-To"
+        "&metadataHeaders=Subject&metadataHeaders=Date"
+        "&metadataHeaders=Message-ID"]
+    assert json.loads(out) == [{"id": "m1", "from": "alice@x.com",
+                                "subject": "Q1 roadmap",
+                                "date": "Mon, 5 Jan 2026 09:14:00 +0000",
+                                "snippet": ""}]
+
+
+def test_reply_all_answers_every_participant_except_me(gmail):
+    ft, run = gmail
+    ft.add("GET", "messages/m1", meta("m1", {
+        "From": "Alice <alice@x.com>",
+        "To": "a@x.com, Bob <bob@x.com>",
+        "Cc": "carol@x.com, A@X.com",
+        "Subject": "Q",
+        "Message-ID": "<orig@x>",
+    }))
+    ft.add("POST", "messages/send", {"id": "sentall"})
+    out = run("gmail", "reply-all", "m1", "--body", "answer")
+    payload, mime = sent_mime(ft)
+    assert payload["threadId"] == "t1"
+    # Sender first, then the other To recipients; display names survive.
+    assert mime["To"] == "Alice <alice@x.com>, Bob <bob@x.com>"
+    # The acting account drops out of both lists, whatever its case.
+    assert mime["Cc"] == "carol@x.com"
+    assert mime["Subject"] == "Re: Q"
+    assert mime["In-Reply-To"] == "<orig@x>"
+    assert "answer" in mime.get_payload()
+    assert "sentall" in out
+
+
+def test_reply_all_does_not_send_anyone_two_copies(gmail):
+    """The sender is usually on the To line too; they get one copy, not two."""
+    ft, run = gmail
+    ft.add("GET", "messages/m1", meta("m1", {"From": "alice@x.com",
+                                             "To": "alice@x.com, bob@x.com",
+                                             "Cc": "bob@x.com",
+                                             "Subject": "Q"}))
+    ft.add("POST", "messages/send", {"id": "sentd"})
+    run("gmail", "reply-all", "m1", "--body", "answer")
+    _, mime = sent_mime(ft)
+    assert mime["To"] == "alice@x.com, bob@x.com"
+    assert mime["Cc"] is None
+
+
+def test_reply_all_prefers_reply_to_over_the_sender(gmail):
+    ft, run = gmail
+    ft.add("GET", "messages/m1", meta("m1", {"From": "alice@x.com",
+                                             "Reply-To": "list@x.com",
+                                             "To": "bob@x.com",
+                                             "Subject": "Q"}))
+    ft.add("POST", "messages/send", {"id": "sentr"})
+    run("gmail", "reply-all", "m1", "--body", "answer")
+    _, mime = sent_mime(ft)
+    assert mime["To"] == "list@x.com, bob@x.com"
+
+
+def test_reply_all_promotes_the_copies_when_only_you_were_addressed(gmail):
+    """A message needs a To line.
+
+    On mail addressed to you and copied to others — a forward from yourself,
+    a list that puts everyone on Cc — dropping yourself empties the To line
+    while real participants are still on Cc. They become the recipients
+    rather than the reply being refused as having nobody to go to.
+    """
+    ft, run = gmail
+    ft.add("GET", "messages/m1", meta("m1", {"From": "a@x.com",
+                                             "To": "a@x.com",
+                                             "Cc": "bob@x.com, carol@x.com",
+                                             "Subject": "fyi"}))
+    ft.add("POST", "messages/send", {"id": "sentc"})
+    run("gmail", "reply-all", "m1", "--body", "answer")
+    _, mime = sent_mime(ft)
+    assert mime["To"] == "bob@x.com, carol@x.com"
+    assert mime["Cc"] is None
+
+
+def test_reply_all_errors_when_every_participant_is_me(gmail):
+    ft, run = gmail
+    ft.add("GET", "messages/m1", meta("m1", {"From": "a@x.com",
+                                             "To": "a@x.com",
+                                             "Subject": "note to self"}))
+    run("gmail", "reply-all", "m1", "--body", "answer", expect=1)
+    assert [c["method"] for c in ft.calls] == ["GET"]  # nothing sent
+
+
+@pytest.mark.parametrize("header", ["To", "Cc", "From"])
+def test_reply_all_refuses_a_line_break_in_a_fetched_recipient_header(gmail,
+                                                                      header):
+    """Recipient headers come off received mail, so they are hostile input.
+
+    `getaddresses` cannot be the guard: depending on the Python patch level
+    it either hands the smuggled header back as one more address or drops
+    every recipient silently, and neither is an answer a user can act on.
+    """
+    ft, run = gmail
+    headers = {"From": "alice@x.com", "To": "bob@x.com", "Subject": "Q"}
+    headers[header] = "victim@x.com\r\nBcc: evil@example.com"
+    ft.add("GET", "messages/m1", meta("m1", headers))
+    ft.add("POST", "messages/send", {"id": "nope"})
+    run("gmail", "reply-all", "m1", "--body", "answer", expect=1)
+    assert [c["method"] for c in ft.calls] == ["GET"]
+
+
+def test_reply_requests_the_headers_it_reads(gmail):
+    """Regression: `reply` preferred Reply-To but never asked Gmail for it.
+
+    `format=metadata` returns *only* the headers named in metadataHeaders, so
+    one left off that list reads as absent on every real message — which is
+    how the Reply-To branch came to be dead code against the live API.
+    """
+    ft, run = gmail
+    ft.add("GET", "messages/m1", meta("m1", {"From": "alice@x.com",
+                                             "Reply-To": "list@x.com",
+                                             "Subject": "Q"}))
+    ft.add("POST", "messages/send", {"id": "sentrt"})
+    run("gmail", "reply", "m1", "--body", "answer")
+    url = ft.calls[0]["url"]
+    assert "metadataHeaders=Reply-To" in url and "metadataHeaders=Cc" in url
+    _, mime = sent_mime(ft)
+    assert mime["To"] == "list@x.com"
+
+
+# -- settings: send-as addresses (gog's `gmail settings sendas *`) -----------
+
+SENDAS_ENTRIES = {"sendAs": [
+    {"sendAsEmail": "a@x.com", "displayName": "Ada", "isPrimary": True,
+     "isDefault": True, "signature": "primary sig"},
+    {"sendAsEmail": "alias@x.com", "displayName": "Alias",
+     "replyToAddress": "list@x.com", "signature": "<b>alias sig</b>",
+     "verificationStatus": "pending", "treatAsAlias": True},
+]}
+
+
+def test_settings_sendas_list(gmail):
+    ft, run = gmail
+    ft.add("GET", "settings/sendAs", SENDAS_ENTRIES)
+    out = run("gmail", "settings", "sendas", "list")
+    assert ft.calls[0]["url"].endswith("/settings/sendAs")
+    for header in ("EMAIL", "NAME", "PRIMARY", "DEFAULT", "VERIFIED"):
+        assert header in out
+    assert "a@x.com" in out and "Ada" in out and "yes" in out
+    assert "alias@x.com" in out and "pending" in out
+
+
+def test_settings_sendas_get(gmail):
+    ft, run = gmail
+    ft.add("GET", "settings/sendAs/alias%40x.com", SENDAS_ENTRIES["sendAs"][1])
+    out = run("gmail", "settings", "sendas", "get", "alias@x.com")
+    assert "settings/sendAs/alias%40x.com" in ft.calls[0]["url"]
+    assert "email: alias@x.com" in out
+    assert "name: Alias" in out
+    assert "reply-to: list@x.com" in out
+    assert "verified: pending" in out
+    assert "signature: <b>alias sig</b>" in out
+
+
+def test_settings_sendas_create(gmail):
+    ft, run = gmail
+    ft.add("POST", "settings/sendAs", {"sendAsEmail": "new@x.com",
+                                       "verificationStatus": "pending"})
+    out = run("gmail", "settings", "sendas", "create", "new@x.com",
+              "--name", "New", "--reply-to", "list@x.com", "--treat-as-alias")
+    assert ft.calls[-1]["method"] == "POST"
+    assert json.loads(ft.calls[-1]["data"]) == {"sendAsEmail": "new@x.com",
+                                                "displayName": "New",
+                                                "replyToAddress": "list@x.com",
+                                                "treatAsAlias": True}
+    # Google mails a confirmation link, so the status is worth saying out loud.
+    assert "created new@x.com pending" in out
+
+
+def test_settings_sendas_create_sends_only_what_was_asked_for(gmail):
+    ft, run = gmail
+    ft.add("POST", "settings/sendAs", {"sendAsEmail": "new@x.com"})
+    run("gmail", "settings", "sendas", "create", "new@x.com")
+    assert json.loads(ft.calls[-1]["data"]) == {"sendAsEmail": "new@x.com"}
+
+
+def test_settings_sendas_update_patches_only_the_named_fields(gmail):
+    ft, run = gmail
+    ft.add("PATCH", "settings/sendAs/alias%40x.com",
+           {"sendAsEmail": "alias@x.com"})
+    out = run("gmail", "settings", "sendas", "update", "alias@x.com",
+              "--name", "Renamed", "--default")
+    assert ft.calls[-1]["method"] == "PATCH"
+    assert json.loads(ft.calls[-1]["data"]) == {"displayName": "Renamed",
+                                                "isDefault": True}
+    assert "updated alias@x.com" in out
+
+
+def test_settings_sendas_update_can_clear_a_field(gmail):
+    """An empty --name is a request to clear the display name, not a no-op."""
+    ft, run = gmail
+    ft.add("PATCH", "settings/sendAs/alias%40x.com",
+           {"sendAsEmail": "alias@x.com"})
+    run("gmail", "settings", "sendas", "update", "alias@x.com", "--name", "")
+    assert json.loads(ft.calls[-1]["data"]) == {"displayName": ""}
+
+
+def test_settings_sendas_update_requires_a_field(gmail):
+    ft, run = gmail
+    run("gmail", "settings", "sendas", "update", "alias@x.com", expect=1)
+    assert ft.calls == []  # rejected before any HTTP
+
+
+def test_settings_sendas_delete_and_verify(gmail):
+    ft, run = gmail
+    ft.add("DELETE", "settings/sendAs/alias%40x.com", {})
+    out = run("gmail", "settings", "sendas", "delete", "alias@x.com")
+    assert ft.calls[-1]["method"] == "DELETE"
+    assert "deleted send-as alias@x.com" in out
+    ft.add("POST", "settings/sendAs/alias%40x.com/verify", {})
+    out = run("gmail", "settings", "sendas", "verify", "alias@x.com")
+    assert ft.calls[-1]["url"].endswith("/sendAs/alias%40x.com/verify")
+    assert "verification email sent to alias@x.com" in out
+
+
+def test_settings_sendas_addresses_cannot_escape_their_url_segment(gmail):
+    """An address is one opaque segment, even when it is not an address."""
+    ft, run = gmail
+    ft.add("DELETE", "settings/sendAs/", {})
+    run("gmail", "settings", "sendas", "delete", "../../../v1/other")
+    url = ft.calls[0]["url"]
+    assert "/sendAs/../" not in url and "%2F" in url
+
+
+def test_settings_sendas_does_not_take_over_signature_editing(gmail):
+    """`gmail signature set` owns signatures; sendas neither duplicates it…
+
+    Two commands writing the same field is how they drift apart, so the
+    overlap is refused at the parser rather than resolved at runtime.
+    """
+    ft, run = gmail
+    with pytest.raises(SystemExit):  # argparse: unrecognized argument
+        run("gmail", "settings", "sendas", "update", "alias@x.com",
+            "--signature", "<b>x</b>")
+    assert ft.calls == []
+    # …nor hides them: `get` still shows what the signature is.
+    ft.add("GET", "settings/sendAs/alias%40x.com", SENDAS_ENTRIES["sendAs"][1])
+    assert "<b>alias sig</b>" in run("gmail", "settings", "sendas", "get",
+                                     "alias@x.com")
+
+
+# -- settings: delegates (gog's `gmail settings delegates *`) ----------------
+
+def test_settings_delegates_list(gmail):
+    ft, run = gmail
+    ft.add("GET", "settings/delegates", {"delegates": [
+        {"delegateEmail": "assistant@x.com", "verificationStatus": "accepted"},
+        {"delegateEmail": "temp@x.com", "verificationStatus": "pending"},
+    ]})
+    out = run("gmail", "settings", "delegates", "list")
+    assert ft.calls[0]["url"].endswith("/settings/delegates")
+    assert "EMAIL" in out and "STATUS" in out
+    assert "assistant@x.com" in out and "accepted" in out
+    assert "temp@x.com" in out and "pending" in out
+
+
+def test_settings_delegates_get(gmail):
+    ft, run = gmail
+    ft.add("GET", "settings/delegates/assistant%40x.com",
+           {"delegateEmail": "assistant@x.com",
+            "verificationStatus": "accepted"})
+    out = run("gmail", "settings", "delegates", "get", "assistant@x.com")
+    assert "settings/delegates/assistant%40x.com" in ft.calls[0]["url"]
+    assert "email: assistant@x.com" in out
+    assert "status: accepted" in out
+
+
+def test_settings_delegates_add_and_remove(gmail):
+    ft, run = gmail
+    ft.add("POST", "settings/delegates",
+           {"delegateEmail": "assistant@x.com",
+            "verificationStatus": "pending"})
+    out = run("gmail", "settings", "delegates", "add", "assistant@x.com")
+    assert json.loads(ft.calls[-1]["data"]) == {
+        "delegateEmail": "assistant@x.com"}
+    assert "added delegate assistant@x.com pending" in out
+    ft.add("DELETE", "settings/delegates/assistant%40x.com", {})
+    out = run("gmail", "settings", "delegates", "remove", "assistant@x.com")
+    assert ft.calls[-1]["method"] == "DELETE"
+    assert "removed delegate assistant@x.com" in out
+
+
+# -- settings: forwarding addresses and auto-forwarding ----------------------
+
+def test_settings_forwarding_list_and_get(gmail):
+    ft, run = gmail
+    ft.add("GET", "settings/forwardingAddresses", {"forwardingAddresses": [
+        {"forwardingEmail": "ops@x.com", "verificationStatus": "accepted"},
+    ]})
+    out = run("gmail", "settings", "forwarding", "list")
+    assert ft.calls[0]["url"].endswith("/settings/forwardingAddresses")
+    assert "EMAIL" in out and "STATUS" in out
+    assert "ops@x.com" in out and "accepted" in out
+    ft.add("GET", "settings/forwardingAddresses/ops%40x.com",
+           {"forwardingEmail": "ops@x.com", "verificationStatus": "accepted"})
+    out = run("gmail", "settings", "forwarding", "get", "ops@x.com")
+    assert "email: ops@x.com" in out and "status: accepted" in out
+
+
+def test_settings_forwarding_create_and_delete(gmail):
+    ft, run = gmail
+    ft.add("POST", "settings/forwardingAddresses",
+           {"forwardingEmail": "ops@x.com", "verificationStatus": "pending"})
+    out = run("gmail", "settings", "forwarding", "create", "ops@x.com")
+    assert json.loads(ft.calls[-1]["data"]) == {"forwardingEmail": "ops@x.com"}
+    assert "created ops@x.com pending" in out
+    ft.add("DELETE", "settings/forwardingAddresses/ops%40x.com", {})
+    out = run("gmail", "settings", "forwarding", "delete", "ops@x.com")
+    assert ft.calls[-1]["method"] == "DELETE"
+    assert "deleted forwarding address ops@x.com" in out
+
+
+def test_settings_autoforward_get(gmail):
+    ft, run = gmail
+    ft.add("GET", "settings/autoForwarding", {"enabled": True,
+                                              "emailAddress": "ops@x.com",
+                                              "disposition": "archive"})
+    out = run("gmail", "settings", "autoforward", "get")
+    assert ft.calls[0]["url"].endswith("/settings/autoForwarding")
+    assert "enabled: True" in out
+    assert "to: ops@x.com" in out
+    assert "disposition: archive" in out
+
+
+def test_settings_autoforward_update_turns_it_on(gmail):
+    ft, run = gmail
+    ft.add("PUT", "settings/autoForwarding", {"enabled": True})
+    out = run("gmail", "settings", "autoforward", "update",
+              "--to", "ops@x.com", "--disposition", "archive")
+    assert ft.calls[-1]["method"] == "PUT"
+    assert json.loads(ft.calls[-1]["data"]) == {"enabled": True,
+                                                "emailAddress": "ops@x.com",
+                                                "disposition": "archive"}
+    assert "auto-forwarding to ops@x.com (archive)" in out
+
+
+def test_settings_autoforward_update_keeps_a_copy_by_default(gmail):
+    """The safe disposition is the default: forwarding never loses the mail."""
+    ft, run = gmail
+    ft.add("PUT", "settings/autoForwarding", {"enabled": True})
+    run("gmail", "settings", "autoforward", "update", "--to", "ops@x.com")
+    assert json.loads(ft.calls[-1]["data"])["disposition"] == "leaveInInbox"
+
+
+def test_settings_autoforward_update_turns_it_off(gmail):
+    ft, run = gmail
+    ft.add("PUT", "settings/autoForwarding", {"enabled": False})
+    out = run("gmail", "settings", "autoforward", "update", "--off")
+    assert json.loads(ft.calls[-1]["data"]) == {"enabled": False}
+    assert "auto-forwarding disabled" in out
+
+
+def test_settings_autoforward_update_needs_to_know_which_way(gmail):
+    """Neither flag is a no-op, and both together contradict each other."""
+    ft, run = gmail
+    run("gmail", "settings", "autoforward", "update", expect=1)
+    run("gmail", "settings", "autoforward", "update", "--off",
+        "--to", "ops@x.com", expect=1)
+    assert ft.calls == []  # both rejected before any HTTP
+
+
+@pytest.mark.parametrize("group, command, method, route", [
+    ("delegates", "remove", "DELETE", "settings/delegates/"),
+    ("forwarding", "delete", "DELETE", "settings/forwardingAddresses/"),
+])
+def test_settings_addresses_cannot_escape_their_url_segment(gmail, group,
+                                                            command, method,
+                                                            route):
+    ft, run = gmail
+    ft.add(method, route, {})
+    run("gmail", "settings", group, command, "../../../v1/other")
+    url = ft.calls[0]["url"]
+    assert "/../" not in url and "%2F" in url

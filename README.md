@@ -77,7 +77,7 @@ worked examples.
 | Service | Commands |
 | --- | --- |
 | [`gsuite auth`](docs/reference/auth.md)<br/><sub>login, accounts, aliases, tokens</sub> | `login` · `logout` · `revoke` · `list` · `status` · `switch` · `alias set|rm|list` · `credentials set` · `token` · `adc` · `doctor` |
-| [`gsuite gmail`](docs/reference/gmail.md)<br/><sub>search, read, send, labels, drafts</sub> | `search` · `get` · `thread` · `attachments` · `send` · `reply` · `forward` · `archive` · `unarchive` · `mark-read` · `mark-unread` · `spam` · `unspam` · `trash` · `untrash` · `labels list|create|apply|remove` · `drafts list|create` · `vacation show|set|off` · `signature show|set` · `filters list|create|rm` · `batch-modify` |
+| [`gsuite gmail`](docs/reference/gmail.md)<br/><sub>search, read, send, labels, drafts</sub> | `search` · `triage` · `get` · `thread` · `attachments` · `send` · `reply` · `reply-all` · `forward` · `archive` · `unarchive` · `mark-read` · `mark-unread` · `spam` · `unspam` · `trash` · `untrash` · `labels list|create|apply|remove` · `drafts list|create` · `vacation show|set|off` · `signature show|set` · `filters list|create|rm` · `settings sendas|delegates|forwarding|autoforward` · `batch-modify` |
 | [`gsuite calendar`](docs/reference/calendar.md)<br/><sub>calendars, events, agenda</sub> | `calendars` · `events` · `agenda` · `create` · `get` · `update` · `respond` · `freebusy` · `delete` |
 | [`gsuite drive`](docs/reference/drive.md)<br/><sub>files: ls, search, upload, share</sub> | `ls` · `search` · `audit` · `info` · `mv` · `mkdir` · `upload` · `download` · `export` · `share` · `permissions` · `trash` · `restore` · `rm` · `copy` · `drives` · `comments list|get|create|update|delete|reply|resolve|reopen` · `revisions list|get` · `rename` · `url` · `unshare` · `shortcut` |
 | [`gsuite docs`](docs/reference/docs.md)<br/><sub>Google Docs: create, cat, append, replace</sub> | `create` · `cat` · `append` · `replace` |
@@ -157,10 +157,10 @@ goes stale.
 
 | Upstream tool | Commands | Provided here | Deliberately out of scope | Not yet |
 | --- | --- | --- | --- | --- |
-| `gws` | 24 | 15 (79% of in-scope) | 5 | 4 |
-| `gog` | 586 | 146 (27% of in-scope) | 41 | 399 |
+| `gws` | 24 | 17 (89% of in-scope) | 5 | 2 |
+| `gog` | 586 | 163 (30% of in-scope) | 41 | 382 |
 
-`gsuite` ships **204 commands**. Percentages are of the in-scope surface — the exclusions and their reasons are in [`parity/mapping.tsv`](parity/mapping.tsv), and the upstream lists in [`parity/upstream.tsv`](parity/upstream.tsv) carry the URL and digest they were read from. Regenerate with `python3 scripts/parity.py`.
+`gsuite` ships **222 commands**. Percentages are of the in-scope surface — the exclusions and their reasons are in [`parity/mapping.tsv`](parity/mapping.tsv), and the upstream lists in [`parity/upstream.tsv`](parity/upstream.tsv) carry the URL and digest they were read from. Regenerate with `python3 scripts/parity.py`.
 
 <!-- END GENERATED PARITY -->
 

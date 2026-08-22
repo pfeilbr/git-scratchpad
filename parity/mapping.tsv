@@ -92,7 +92,9 @@ gws	events +renew	excluded	Workspace Events push subscriptions need a Pub/Sub to
 gws	events +subscribe	excluded	Workspace Events push subscriptions need a Pub/Sub topic and a long-lived listener process
 gws	gmail +forward	alias	gmail forward
 gws	gmail +reply	alias	gmail reply
+gws	gmail +reply-all	alias	gmail reply-all
 gws	gmail +send	alias	gmail send
+gws	gmail +triage	alias	gmail triage
 gws	modelarmor +create-template	excluded	Model Armor is a Google Cloud security product, not part of Google Workspace
 gws	modelarmor +sanitize-prompt	excluded	Model Armor is a Google Cloud security product, not part of Google Workspace
 gws	modelarmor +sanitize-response	excluded	Model Armor is a Google Cloud security product, not part of Google Workspace
