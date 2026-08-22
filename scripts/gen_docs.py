@@ -83,6 +83,21 @@ EXAMPLES: dict[str, list[tuple[str, str, str]]] = {
          "--start 2026-01-07T14:00 --end 2026-01-07T15:00 "
          "--attendees alice@example.com,bob@example.com",
          "created e9f3 https://www.google.com/calendar/event?eid=..."),
+        ("Find this week's double-bookings",
+         "gsuite calendar conflicts",
+         "FROM                  TO                    EVENT    ID    "
+         "CONFLICTS-WITH  WITH-ID\n"
+         "2026-01-05T09:15:00Z  2026-01-05T09:30:00Z  Standup  e1a2  "
+         "Design review   e9f3"),
+        ("Block a week off, declining new invitations as they arrive",
+         "gsuite calendar out-of-office --start 2026-01-12T09:00 "
+         "--end 2026-01-16T17:00 --decline new --message 'Back on the 19th'",
+         "created ooo7 https://www.google.com/calendar/event?eid=..."),
+        ("Share a calendar, then check who can see it",
+         "gsuite calendar acl add alice@example.com --role writer\n"
+         "gsuite calendar acl list",
+         "ID                   ROLE    TYPE  WHO\n"
+         "user:alice@example.com  writer  user  alice@example.com"),
     ],
     "drive": [
         ("List a folder and upload into it",
